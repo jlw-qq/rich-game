@@ -1,0 +1,399 @@
+:root {
+  color-scheme: dark;
+  font-family: system-ui, 'Microsoft YaHei', sans-serif;
+  --bg: #1e2430;
+  --panel: #283041;
+  --panel-2: #323b4f;
+  --text: #f2f2f2;
+  --muted: #a9b2c3;
+  --accent: #4fa3ff;
+  --danger: #e05555;
+  --focus: #ffd24f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+h1,
+h2 {
+  margin: 0 0 8px;
+}
+
+h2 {
+  font-size: 0.95rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* ---------- 按钮 ---------- */
+
+.btn {
+  font: inherit;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid #5b6680;
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.btn:hover:not(:disabled) {
+  background: #3d4860;
+}
+
+.btn:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0d1a2b;
+  font-weight: 600;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #78b9ff;
+}
+
+.btn-danger {
+  border-color: var(--danger);
+  color: #ffb3b3;
+}
+
+.btn-ghost {
+  background: transparent;
+}
+
+.btn-large {
+  padding: 10px 24px;
+  font-size: 1.1rem;
+}
+
+/* ---------- 开局 ---------- */
+
+.setup {
+  display: flex;
+  justify-content: center;
+  padding: 48px 16px;
+}
+
+.setup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: min(360px, 100%);
+  padding: 24px;
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.setup-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.setup-row label {
+  min-width: 5em;
+}
+
+.setup-row input,
+.setup-row select {
+  flex: 1;
+  font: inherit;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #5b6680;
+  background: #1b2130;
+  color: var(--text);
+}
+
+.setup-row .setup-kind {
+  flex: none;
+  width: 8.5em;
+}
+
+.setup-resume {
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.setup-resume p {
+  margin: 0 0 8px;
+}
+
+.setup-row input[type='file'] {
+  font-size: 0.85rem;
+}
+
+/* ---------- 结算 ---------- */
+
+.results h2 {
+  color: var(--text);
+  font-size: 1.1rem;
+}
+
+.results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.results-table th,
+.results-table td {
+  padding: 4px 6px;
+  text-align: left;
+  border-bottom: 1px solid #3b455b;
+}
+
+.results-table thead th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.results-table tbody th {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.results-winner {
+  background: rgba(255, 210, 79, 0.15);
+}
+
+.results-bankrupt {
+  color: var(--muted);
+}
+
+.results[hidden] {
+  display: none;
+}
+
+.setup-errors {
+  margin: 0;
+  padding-left: 1.2em;
+  color: #ffb3b3;
+}
+
+.setup-errors:empty {
+  display: none;
+}
+
+/* ---------- 对局 ---------- */
+
+.game {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 16px;
+  padding: 16px;
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+.game[hidden],
+.setup[hidden] {
+  display: none;
+}
+
+@media (max-width: 960px) {
+  .game {
+    grid-template-columns: 1fr;
+  }
+}
+
+.board-wrap {
+  min-width: 0;
+}
+
+#board {
+  display: block;
+  border-radius: 10px;
+  background: #222a38;
+}
+
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.card {
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.status {
+  margin: 0 0 10px;
+  min-height: 3em;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.players {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 2px solid transparent;
+}
+
+.player-current {
+  border-color: #ffffff;
+}
+
+.player-bankrupt {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.player-dot,
+.asset-swatch {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid #111;
+}
+
+.asset-swatch {
+  border-radius: 3px;
+}
+
+/* 带座位号的圆点，与棋盘上棋子的数字对应 */
+.player-seat {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #1b1b1b;
+}
+
+.player-name {
+  font-weight: 600;
+}
+
+.player-meta {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.tag {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  background: #5b6680;
+}
+
+.asset-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.asset {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.asset-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.asset-ops {
+  display: flex;
+  gap: 4px;
+}
+
+.asset-ops .btn {
+  padding: 2px 8px;
+  font-size: 0.8rem;
+}
+
+.log {
+  list-style: none;
+  margin: 0;
+  padding: 8px 10px;
+  height: 220px;
+  overflow-y: auto;
+  border-radius: 8px;
+  background: #171c26;
+  font-size: 0.85rem;
+}
+
+.log li {
+  padding: 1px 0;
+}
+
+.log-highlight {
+  color: #ffe08a;
+  font-weight: 600;
+}
+
+.log-error {
+  color: #ff9e9e;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto !important;
+  }
+}
