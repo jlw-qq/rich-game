@@ -5,6 +5,7 @@ import { computeLayout, gridOf, outwardOf, project, tileAt, TILE_SCALE } from '.
 import { BOARD_COLORS, GROUP_COLORS, GROUP_HEADERS, ICON_COLORS, PLAYER_COLORS, STYLE, TILE_COLORS, shade } from './theme.js';
 import { drawIcon } from './icons.js';
 import { easeOutBack, flash } from './easing.js';
+import { CARD_TEXT_RATIO, upgradeText } from './tileCard.js';
 
 const FONT = 'system-ui, "Microsoft YaHei", sans-serif';
 const CORNER_TYPES = ['start', 'jail', 'parking', 'goToJail'];
@@ -209,7 +210,7 @@ export function createBoardRenderer(canvas) {
     ctx.lineWidth = STYLE.line;
     ctx.stroke();
 
-    const size = th * 0.27;
+    const size = th * CARD_TEXT_RATIO;
     const half = w / 2 - pad * 1.5;
     const headerText = header.text;
     fitText(card.name, c.x, top + (CARD_HEADER * th) / 2, th * 0.36, w * 0.56, headerText, 'bold');
@@ -247,7 +248,7 @@ export function createBoardRenderer(canvas) {
     }
     if (card.groupBonus) alignedText('整组租金 ×2', xr, row(1), size, half, '#2f7d4a', 'right', 'bold');
 
-    // 第 3 行：建筑等级（实心为已建）| 下一级租金
+    // 第 3 行：建筑等级（实心为已建）| 升级说明
     const hs = th * 0.2;
     for (let k = 0; k < card.maxLevel; k++) {
       const x = xl + hs / 2 + k * hs * 1.35;
@@ -268,8 +269,8 @@ export function createBoardRenderer(canvas) {
         ctx.stroke();
       }
     }
-    const nextText = card.nextRent === null ? '已满级' : `下一级 ${num(card.nextRent)}`;
-    alignedText(nextText, xr, row(2), size, half, BOARD_COLORS.subText, 'right');
+    // 房子图标占左侧约 1/4，升级说明可以用剩下的宽度
+    alignedText(upgradeText(card, num), xr, row(2), size, w - pad * 2 - hs * 1.35 * card.maxLevel - pad, BOARD_COLORS.subText, 'right');
   }
 
   /** 查看中的格子：白色细描边 */
@@ -529,7 +530,40 @@ export function createBoardRenderer(canvas) {
     fitText(name, c.x, y, th * (corner ? 0.25 : 0.2), tw * (corner ? 0.52 : 0.5), BOARD_COLORS.text, corner ? 'bold' : 'normal');
   }
 
-  function drawTokens(state, tokens, currentPlayerId) {
+  /**
+   * 同一格停了多枚棋子时，棋子会挡住格子名，在格子上方补一个名牌。
+   * 只处理已经停稳的棋子（移动中的不算）。
+   */
+  function drawStackLabels(board, items) {
+    const { tw, th } = layout;
+    const counts = new Map();
+    for (const it of items) {
+      if (it.z !== 0 || !Number.isInteger(it.index)) continue;
+      counts.set(it.index, (counts.get(it.index) ?? 0) + 1);
+    }
+    for (const [index, n] of counts) {
+      if (n < 2) continue;
+      const tile = board.tiles[index];
+      const { gx, gy } = gridOf(index);
+      const c = project(layout, gx, gy);
+      const name = tile.type === 'jail' ? '监狱' : tile.name;
+      const size = th * 0.24;
+      ctx.font = `bold ${size}px ${FONT}`;
+      const w = Math.min(ctx.measureText(name).width + size, tw * 0.9);
+      const h = size * 1.5;
+      const y = c.y - (th / 2) * TILE_SCALE - h * 0.75;
+      ctx.beginPath();
+      ctx.roundRect(c.x - w / 2, y - h / 2, w, h, h / 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+      ctx.fill();
+      ctx.strokeStyle = BOARD_COLORS.outline;
+      ctx.lineWidth = STYLE.line;
+      ctx.stroke();
+      fitText(name, c.x, y, size, w - size * 0.6, BOARD_COLORS.text, 'bold');
+    }
+  }
+
+  function drawTokens(state, tokens, currentPlayerId, board) {
     const { tw, th } = layout;
     const r = th * 0.17;
     const items = state.players
@@ -538,7 +572,12 @@ export function createBoardRenderer(canvas) {
       .map(({ p, i, tok }) => {
         const base = project(layout, tok.gx, tok.gy);
         const [sx, sy] = TOKEN_SLOTS[i % TOKEN_SLOTS.length];
-        return { p, i, z: tok.z, x: base.x + sx * tw, y: base.y + sy * th };
+        // 停稳时记下所在格子，用于同格名牌
+        const index = Number.isInteger(tok.gx) && Number.isInteger(tok.gy) ? board.tiles.findIndex((t) => {
+          const g = gridOf(t.index);
+          return g.gx === tok.gx && g.gy === tok.gy;
+        }) : null;
+        return { p, i, z: tok.z, index: index >= 0 ? index : null, x: base.x + sx * tw, y: base.y + sy * th };
       })
       .sort((a, b) => a.y - b.y);
 
@@ -566,6 +605,7 @@ export function createBoardRenderer(canvas) {
       // 座位号，颜色之外的第二种区分方式（名字首字可能相同，如“小红”“小蓝”）
       fitText(String(i + 1), x, cy, r * 1.2, r * 1.6, '#1b1b1b', 'bold');
     }
+    drawStackLabels(board, items);
   }
 
   function drawFloater({ text, color, gx, gy, rise, alpha, scale = 1 }) {
@@ -631,7 +671,7 @@ export function createBoardRenderer(canvas) {
     if (focus && focus.glow > 0) drawHighlight(focus.index, focus.glow);
     if (viewing !== null) drawViewOutline(viewing);
     if (card) drawCard(card, cardLabel, compactCard);
-    if (state && tokens) drawTokens(state, tokens, currentPlayerId);
+    if (state && tokens) drawTokens(state, tokens, currentPlayerId, board);
     for (const f of floaters) drawFloater(f);
   }
 
@@ -640,5 +680,9 @@ export function createBoardRenderer(canvas) {
     draw,
     /** 画布上的点（CSS 像素）落在哪个格子顶面上，没有则为 null */
     pickTile: (x, y) => tileAt(layout, x, y),
+    /** 当前格高（CSS 像素），用来判断棋盘上的文字是否太小 */
+    get cellHeight() {
+      return layout.th;
+    },
   };
 }

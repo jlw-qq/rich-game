@@ -126,18 +126,33 @@ export function buyProperty(ctx, playerId, tileId) {
   return ok();
 }
 
+/**
+ * 地主升级这块地的规则限制（不含现金是否足够）。可以升级时返回 null。
+ * code：maxLevel 已满级；notFullGroup 没有整个颜色组；mortgaged 组内有抵押地产。
+ * @param {Context} ctx
+ * @param {string} tileId 必须是有主地产
+ * @returns {{ code: 'maxLevel' | 'notFullGroup' | 'mortgaged', message: string } | null}
+ */
+export function upgradeBlocker(ctx, tileId) {
+  const { state, board, rules } = ctx;
+  const tile = getPropertyTile(board, tileId);
+  const prop = state.properties[tile.id];
+  if (prop.level >= rules.maxLevel) return { code: 'maxLevel', message: `${tile.name} 已是最高等级` };
+  if (!ownsFullGroup(ctx, prop.ownerId, tile.group)) return { code: 'notFullGroup', message: '需要拥有整个颜色组才能升级' };
+  if (board.getGroupTiles(tile.group).some((t) => state.properties[t.id].mortgaged)) {
+    return { code: 'mortgaged', message: '颜色组内有抵押地产，不能升级' };
+  }
+  return null;
+}
+
 /** @param {Context} ctx */
 export function upgradeProperty(ctx, playerId, tileId) {
   const found = lookup(ctx, playerId, tileId);
   if (found.error) return fail(found.error);
   const { player, tile, prop } = found;
-  const { state, board, rules } = ctx;
 
-  if (prop.level >= rules.maxLevel) return fail(`${tile.name} 已是最高等级`);
-  if (!ownsFullGroup(ctx, playerId, tile.group)) return fail('需要拥有整个颜色组才能升级');
-  if (board.getGroupTiles(tile.group).some((t) => state.properties[t.id].mortgaged)) {
-    return fail('颜色组内有抵押地产，不能升级');
-  }
+  const blocker = upgradeBlocker(ctx, tile.id);
+  if (blocker) return fail(blocker.message);
   if (player.cash < tile.upgradeCost) return fail(`现金不足：需要 ${tile.upgradeCost}，现有 ${player.cash}`);
 
   player.cash -= tile.upgradeCost;

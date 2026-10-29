@@ -20,7 +20,7 @@ import { PHASES } from './logic/core/turnMachine.js';
 import { createAiDriver } from './logic/ai/driver.js';
 import { createBoardRenderer } from './view/render/boardRenderer.js';
 import { createAnimator } from './view/render/animator.js';
-import { tileCardInfo } from './view/render/tileCard.js';
+import { isCompactCard, tileCardInfo } from './view/render/tileCard.js';
 import { createSound } from './view/audio/sound.js';
 import { formatEvent } from './view/ui/format.js';
 import { createLog } from './view/ui/log.js';
@@ -90,8 +90,6 @@ let speed = loadSpeed();
 const selection = createSelection(board.size);
 /** 上一次看到的落地次数；有新落点时取消固定查看，让玩家先看到“走到哪儿” */
 let seenLandings = 0;
-/** 棋盘画布窄于该宽度（CSS 像素）时，棋盘上的卡片只显示城市名，详细信息放到侧栏 */
-const COMPACT_CARD_WIDTH = 600;
 const cardPanel = createCardPanel($('tile-card'));
 /** 读屏文字只在内容变化时更新，避免重复朗读 */
 let lastReadout = '';
@@ -121,7 +119,8 @@ function frame(now) {
   const viewing = shown && shown.source !== 'landing' ? shown.index : null;
   const card = shown ? tileCardInfo({ state: session.state, board, rules: RULES }, shown.index) : null;
   updateReadout(shown, card);
-  const compactCard = canvas.clientWidth < COMPACT_CARD_WIDTH;
+  // 按卡片实际字号判断（已包含画布宽高），字太小时详细信息放到侧栏
+  const compactCard = isCompactCard(renderer.cellHeight);
   cardPanel.render(compactCard ? card : null, shown?.source === 'landing' ? '落点' : '查看');
   renderer.draw({
     board,

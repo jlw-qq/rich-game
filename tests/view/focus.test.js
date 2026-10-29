@@ -7,7 +7,8 @@ import { RULES } from '../../src/data/config/rules.js';
 import { createBoard } from '../../src/logic/core/board.js';
 import { createInitialState } from '../../src/logic/core/gameState.js';
 import { createAnimator, HIGHLIGHT_MS } from '../../src/view/render/animator.js';
-import { tileCardInfo } from '../../src/view/render/tileCard.js';
+import { isCompactCard, MIN_CARD_TEXT_PX, CARD_TEXT_RATIO, tileCardInfo, upgradeText } from '../../src/view/render/tileCard.js';
+import { upgradeBlocker } from '../../src/logic/systems/property.js';
 
 const board = createBoard({ tiles: TILES, groups: GROUPS, rules: RULES });
 const indexOf = (id) => TILES.findIndex((t) => t.id === id);
@@ -26,7 +27,7 @@ describe('地产卡片数据', () => {
     expect(tileCardInfo({ state, board, rules: RULES }, 99)).toBeNull();
   });
 
-  it('无主：显示空地租金和下一级租金', () => {
+  it('无主：显示空地租金和 1 级租金（不写“下一级”）', () => {
     expect(card(newState(), 'xining')).toEqual({
       name: '西宁',
       group: 'brown',
@@ -37,7 +38,7 @@ describe('地产卡片数据', () => {
       owner: null,
       rent: 20,
       groupBonus: false,
-      nextRent: 100,
+      upgrade: { kind: 'unowned', rent: 100 },
     });
   });
 
@@ -53,7 +54,7 @@ describe('地产卡片数据', () => {
     Object.assign(state.properties.yinchuan, { ownerId: 'p1' });
     expect(card(state, 'xining')).toMatchObject({ rent: 20 * RULES.groupRentMultiplier, groupBonus: true });
     state.properties.xining.level = 2;
-    expect(card(state, 'xining')).toMatchObject({ rent: 300, groupBonus: false, nextRent: 900 });
+    expect(card(state, 'xining')).toMatchObject({ rent: 300, groupBonus: false, upgrade: { kind: 'ready', rent: 900 } });
   });
 
   it('已抵押：租金为 0，不标注整组', () => {
@@ -67,7 +68,7 @@ describe('地产卡片数据', () => {
     const state = newState();
     Object.assign(state.properties.xining, { ownerId: 'p1', level: RULES.maxLevel });
     Object.assign(state.properties.yinchuan, { ownerId: 'p1' });
-    expect(card(state, 'xining')).toMatchObject({ rent: 1600, nextRent: null });
+    expect(card(state, 'xining')).toMatchObject({ rent: 1600, upgrade: { kind: 'max', rent: null } });
   });
 
   it('所有者已破产时租金为 0', () => {
@@ -75,6 +76,60 @@ describe('地产卡片数据', () => {
     Object.assign(state.properties.xining, { ownerId: 'p2' });
     state.players[1].bankrupt = true;
     expect(card(state, 'xining')).toMatchObject({ rent: 0, groupBonus: false });
+  });
+});
+
+describe('升级说明', () => {
+  const ctx = (state) => ({ state, board, rules: RULES });
+  const card = (state, id) => tileCardInfo(ctx(state), indexOf(id));
+  const fmt = (n) => `¥${n}`;
+
+  it('没凑齐整组：提示凑齐整组后才能升级，并给出 1 级租金', () => {
+    const state = newState();
+    Object.assign(state.properties.xining, { ownerId: 'p1' });
+    const c = card(state, 'xining');
+    expect(c.upgrade).toEqual({ kind: 'needGroup', rent: 100 });
+    expect(upgradeText(c, fmt)).toBe('凑齐整组可升级 · 1 级 ¥100');
+  });
+
+  it('本格已抵押：提示赎回；同组其他地已抵押：提示同组赎回', () => {
+    const state = newState();
+    Object.assign(state.properties.xining, { ownerId: 'p1', mortgaged: true });
+    Object.assign(state.properties.yinchuan, { ownerId: 'p1' });
+    expect(upgradeText(card(state, 'xining'), fmt)).toBe('赎回后才能升级');
+    expect(upgradeText(card(state, 'yinchuan'), fmt)).toBe('同组赎回后才能升级');
+  });
+
+  it('各种情况的文字', () => {
+    const state = newState();
+    expect(upgradeText(card(state, 'xining'), fmt)).toBe('1 级租金 ¥100');
+    Object.assign(state.properties.xining, { ownerId: 'p1', level: 1 });
+    Object.assign(state.properties.yinchuan, { ownerId: 'p1' });
+    expect(upgradeText(card(state, 'xining'), fmt)).toBe('下一级 ¥300');
+    state.properties.xining.level = RULES.maxLevel;
+    expect(upgradeText(card(state, 'xining'), fmt)).toBe('已满级');
+  });
+
+  it('upgradeBlocker 与升级规则一致', () => {
+    const state = newState();
+    Object.assign(state.properties.xining, { ownerId: 'p1' });
+    expect(upgradeBlocker(ctx(state), 'xining')?.code).toBe('notFullGroup');
+    Object.assign(state.properties.yinchuan, { ownerId: 'p1', mortgaged: true });
+    expect(upgradeBlocker(ctx(state), 'xining')?.code).toBe('mortgaged');
+    state.properties.yinchuan.mortgaged = false;
+    expect(upgradeBlocker(ctx(state), 'xining')).toBeNull();
+    state.properties.xining.level = RULES.maxLevel;
+    expect(upgradeBlocker(ctx(state), 'xining')?.code).toBe('maxLevel');
+  });
+});
+
+describe('紧凑卡片判断', () => {
+  it(`卡片正文小于 ${MIN_CARD_TEXT_PX}px 时切换`, () => {
+    const edge = MIN_CARD_TEXT_PX / CARD_TEXT_RATIO;
+    expect(isCompactCard(edge)).toBe(false);
+    expect(isCompactCard(edge - 0.1)).toBe(true);
+    expect(isCompactCard(45)).toBe(false); // 1440×900 的格高
+    expect(isCompactCard(30)).toBe(true); // 约 1100px 双栏时的格高
   });
 });
 

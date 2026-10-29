@@ -522,6 +522,33 @@ select:focus-visible {
   margin: 0;
 }
 
+.tile-card-body .player-dot {
+  display: inline-block;
+  vertical-align: -2px;
+}
+
 .tile-card-body .muted {
   color: #555;
+}
+
+/* ---------- 棋盘操作提示：有鼠标时显示悬停和键盘提示，触屏时只显示点按 ---------- */
+
+.board-hint {
+  margin: 6px 4px 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.hint-pointer {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hint-pointer {
+    display: inline;
+  }
+
+  .hint-touch {
+    display: none;
+  }
 }

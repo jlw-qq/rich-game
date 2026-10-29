@@ -5,6 +5,7 @@
 import { el } from './dom.js';
 import { money } from './format.js';
 import { GROUP_HEADERS, PLAYER_COLORS } from '../render/theme.js';
+import { upgradeText } from '../render/tileCard.js';
 
 /** @param {HTMLElement} root */
 export function createCardPanel(root) {
@@ -53,7 +54,7 @@ export function createCardPanel(root) {
           {},
           el('span', { 'aria-hidden': 'true' }, houses),
           ` ${card.level} 级`,
-          card.nextRent === null ? ' · 已满级' : ` · 下一级 ${money(card.nextRent)}`,
+          ` · ${upgradeText(card, money)}`,
         ),
       ),
     );

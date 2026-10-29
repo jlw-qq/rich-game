@@ -173,6 +173,18 @@ describe('落点光边与地产特效交棒', () => {
     expect(a.focus).toEqual({ index: 3, glow: 0 }); // 落点仍保留，供卡片使用
   });
 
+  it('在落点格收租时，金额出现后光边淡出', () => {
+    const a = createAnimator({ state, tileIds });
+    a.handle(move, 'playerMoved');
+    a.tick(0);
+    a.tick(1000);
+    a.handle({ payerId: 'p1', payeeIds: ['p2'], amount: 40, reason: { type: 'rent', tileId: 'yinchuan' } }, 'paymentMade');
+    a.tick(1100);
+    expect(a.floaters.length).toBe(2);
+    a.tick(1250);
+    expect(a.focus.glow).toBe(0);
+  });
+
   it('其他格子的特效不影响光边', () => {
     const a = createAnimator({ state, tileIds });
     a.handle(move, 'playerMoved');

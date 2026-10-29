@@ -118,8 +118,13 @@ export function createAnimator({ state, tileIds = [], reducedMotion = false, onE
     for (const [tileId, kind, level] of TILE_EFFECTS[type]?.(p) ?? []) {
       effects.set(tileId, { kind, level, born: lastNow, ms: EFFECT_MS[kind] / speed });
       // 同一格的落点光边交棒给地产特效
-      if (focus && focus.cutAt === undefined && tileIds[focus.index] === tileId) focus.cutAt = lastNow;
+      handOff(tileId);
     }
+  }
+
+  /** 落点格上开始播放更具体的反馈时，落点光边淡出 */
+  function handOff(tileId) {
+    if (focus && focus.cutAt === undefined && tileIds[focus.index] === tileId) focus.cutAt = lastNow;
   }
 
   function addFloater(playerId, amount) {
@@ -138,6 +143,8 @@ export function createAnimator({ state, tileIds = [], reducedMotion = false, onE
   function makeTask(type, p) {
     for (const [id, amount] of CASH_DELTAS[type]?.(p) ?? []) addFloater(id, amount);
     addEffects(type, p);
+    // 在落点格付租金或交税：金额出现后光边交棒，顺序是“停在这里 → 付了多少”
+    if (type === 'paymentMade' && p.reason?.tileId) handOff(p.reason.tileId);
 
     switch (type) {
       case 'diceRolled':
