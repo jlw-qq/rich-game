@@ -614,10 +614,16 @@ select:focus-visible {
     background: var(--bg);
   }
 
+  /* 其余区块保持内容高度，不被压缩（详情卡 overflow: hidden，被压缩时会被裁掉） */
+  .side > * {
+    flex-shrink: 0;
+  }
+
+  /* 只有日志区可以伸缩：占剩余空间，不够时缩到最小高度，再不够由侧栏整体滚动 */
   .side > section:has(#log) {
     display: flex;
     flex-direction: column;
-    flex: 1;
+    flex: 1 1 auto;
     min-height: 0;
   }
 

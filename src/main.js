@@ -127,6 +127,7 @@ function frame(now) {
     }
   }
   zoomOutButton.hidden = !viewport.zoomed;
+  updateTouchHint();
   canvas.style.touchAction = viewport.zoomed ? 'none' : '';
   const focus = animator?.focus ?? null;
   if (animator && animator.landings !== seenLandings) {
@@ -157,6 +158,20 @@ function frame(now) {
     view: viewport.view,
   });
   if (needMore || viewMoving) requestFrame();
+}
+
+/** 触屏提示：只在会放大的小画布上提放大手势；放大后说明如何拖动、缩放和回到全图 */
+const TOUCH_HINTS = {
+  plain: '点按地产查看详情',
+  zoomable: '点按地产查看详情，并放大该区域',
+  zoomed: '拖动平移 · 双指缩放 · 点右上角「缩小查看全图」回到全图',
+};
+let touchHint = '';
+function updateTouchHint() {
+  const key = viewport.zoomed ? 'zoomed' : zoomEnabled() ? 'zoomable' : 'plain';
+  if (key === touchHint) return;
+  touchHint = key;
+  $('hint-touch').textContent = TOUCH_HINTS[key];
 }
 
 /** 把正在查看的格子写成一句话，给读屏软件用（只朗读玩家主动查看的格子） */

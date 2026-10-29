@@ -24,7 +24,8 @@
         <p id="tile-readout" class="visually-hidden" aria-live="polite"></p>
         <p class="board-hint">
           <span class="hint-pointer">悬停或点击地产查看详情 · 选中棋盘后用方向键逐格浏览</span>
-          <span class="hint-touch">点按地产查看详情</span>
+          <!-- 触屏提示随放大状态切换，文字由 main.js 写入 -->
+          <span id="hint-touch" class="hint-touch" aria-live="polite">点按地产查看详情</span>
         </p>
       </div>
 
