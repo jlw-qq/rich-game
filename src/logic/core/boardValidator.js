@@ -38,6 +38,13 @@ export function validateRules(rules) {
   if (typeof rate !== 'number' || !(rate >= 0 && rate < 1)) {
     errors.push(`rules.mortgageInterestRate 必须在 [0, 1) 内，实际为 ${rate}`);
   }
+  for (const key of ['goalNetWorth', 'startingProperties']) {
+    if (!(Number.isInteger(rules[key]) && rules[key] >= 0)) errors.push(`rules.${key} 必须是非负整数，实际为 ${rules[key]}`);
+  }
+  const rentMult = rules.rentMultiplier;
+  if (typeof rentMult !== 'number' || !(rentMult > 0 && rentMult <= 10)) {
+    errors.push(`rules.rentMultiplier 必须在 (0, 10] 内，实际为 ${rentMult}`);
+  }
   const sellRate = rules.buildingSellRate;
   if (typeof sellRate !== 'number' || !(sellRate >= 0 && sellRate <= 1)) {
     errors.push(`rules.buildingSellRate 必须在 [0, 1] 内，实际为 ${sellRate}`);

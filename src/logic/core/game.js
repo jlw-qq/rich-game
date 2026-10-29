@@ -302,6 +302,14 @@ export function createGame({ board, rules, state, bus, cards = [], rollDice = de
   /** 结束回合：掷出双数且仍可行动则同一玩家再掷，否则换下一位 */
   function endTurn() {
     if (state.phase !== P.TURN_END) return fail(`当前阶段不能结束回合: ${state.phase}`);
+    // 目标资产：回合结束时有人达到就立即终局，多人同时达到时总资产最高者获胜
+    if (rules.goalNetWorth > 0) {
+      const reached = state.players.filter((p) => !p.bankrupt && netWorth(ctx, p.id) >= rules.goalNetWorth);
+      if (reached.length > 0) {
+        const winner = reached.reduce((a, b) => (netWorth(ctx, b.id) > netWorth(ctx, a.id) ? b : a));
+        return fsm.finishGame(winner.id, 'goal');
+      }
+    }
     const player = fsm.currentPlayer();
     if (state.doublesCount > 0 && player && !player.bankrupt && !player.inJail) {
       return fsm.grantExtraRoll();

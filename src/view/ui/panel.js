@@ -4,6 +4,7 @@
  */
 import { el } from './dom.js';
 import { money, tradeSideText } from './format.js';
+import { rentAt } from '../../logic/systems/property.js';
 import { PLAYER_COLORS, GROUP_COLORS } from '../render/theme.js';
 
 /**
@@ -21,9 +22,10 @@ const ALWAYS_ENABLED = new Set(['rematch', 'newGame']);
  *   assets: HTMLElement,
  *   onAction: (action: Action) => void,
  *   maxTradesPerTurn: number,
- * }} roots
+ *   goal?: HTMLElement,
+ * }} roots goal 为显示剩余轮数和目标资产的元素
  */
-export function createPanel({ players, status, actions, assets, onAction, maxTradesPerTurn }) {
+export function createPanel({ players, status, actions, assets, onAction, maxTradesPerTurn, goal = null }) {
   const button = (action, disabled) =>
     el('button', {
       type: 'button',
@@ -100,7 +102,9 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
       case 'gameOver': {
         const winner = state.players.find((p) => p.id === state.winnerId);
         if (!winner) return '游戏结束';
-        return state.endReason === 'roundLimit' ? `打满回合上限，${winner.name} 以总资产最高获胜` : `${winner.name} 获胜！`;
+        if (state.endReason === 'roundLimit') return `打满回合上限，${winner.name} 以总资产最高获胜`;
+        if (state.endReason === 'goal') return `${winner.name} 总资产率先达到目标，获胜！`;
+        return `${winner.name} 获胜！`;
       }
       default:
         return '';
@@ -148,7 +152,7 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
     }
   }
 
-  function renderAssets(state, game, board, busy) {
+  function renderAssets(state, game, board, busy, rules) {
     const actingId = game.actingPlayerId();
     const phase = state.phase;
     const canInvest = phase === 'awaitRoll';
@@ -183,7 +187,7 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
               'span',
               { class: 'asset-name' },
               t.name,
-              el('span', { class: 'muted' }, prop.mortgaged ? ' 已抵押' : ` ${prop.level} 级 · 租 ${t.rent[prop.level]}`),
+              el('span', { class: 'muted' }, prop.mortgaged ? ' 已抵押' : ` ${prop.level} 级 · 租 ${rules ? rentAt(t, prop.level, rules) : t.rent[prop.level]}`),
             ),
             el('span', { class: 'asset-ops' }, ops.map((a) => button(a, busy))),
           );
@@ -195,13 +199,37 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
   /**
    * @param {{ state: object, game: object, board: object, busy: boolean }} view
    */
-  function render({ state, game, board, busy }) {
+  /**
+   * @param {{ state: object, game: object, board: object, busy: boolean, rules?: object }} view
+   *   rules 为这一局的规则，用来显示剩余轮数和目标资产
+   */
+  function render({ state, game, board, busy, rules }) {
     renderPlayers(state, game);
+    renderGoal(state, game, rules);
     const acting = state.players.find((p) => p.id === game.actingPlayerId());
     status.textContent =
       acting?.isAI && state.phase !== 'gameOver' ? `${acting.name}（AI）正在操作…` : statusText(state, game, board);
     actions.replaceChildren(...mainActions(state, game).map((a) => button(a, busy && !ALWAYS_ENABLED.has(a.kind))));
-    renderAssets(state, game, board, busy);
+    renderAssets(state, game, board, busy, rules);
+  }
+
+  /** 终局条件一直显示在侧栏：剩余轮数，以及（短局）目标资产和目前的领先者 */
+  function renderGoal(state, game, rules) {
+    if (!goal || !rules) return;
+    if (state.phase === 'gameOver') {
+      goal.hidden = true;
+      return;
+    }
+    // “第 3/25 轮”比“剩余 22 轮”更不容易误读（当前这一轮算不算剩余）
+    const last = state.round >= rules.maxRounds;
+    const parts = [last ? `最后一轮（${rules.maxRounds}/${rules.maxRounds}）` : `第 ${state.round}/${rules.maxRounds} 轮`];
+    if (rules.goalNetWorth > 0) {
+      const alive = state.players.filter((p) => !p.bankrupt);
+      const best = alive.reduce((a, b) => (game.netWorth(b.id) > game.netWorth(a.id) ? b : a));
+      parts.push(`目标总资产 ${money(rules.goalNetWorth)}`, `领先：${best.name} ${money(game.netWorth(best.id))}`);
+    }
+    goal.hidden = false;
+    goal.textContent = parts.join(' · ');
   }
 
   /** 动画播放中：只切换按钮的禁用状态，不重绘数字（避免提前显示结果） */

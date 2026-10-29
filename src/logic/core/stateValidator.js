@@ -5,6 +5,7 @@
 import { PHASES } from './turnMachine.js';
 import { AI_LEVELS, MAX_NAME_LENGTH, STATE_VERSION } from './gameState.js';
 import { prepareTrade } from '../systems/trade.js';
+import { MODES, rulesFor } from '../../data/config/modes.js';
 
 const isInt = (v) => Number.isInteger(v);
 const isNonNegInt = (v) => isInt(v) && v >= 0;
@@ -16,10 +17,14 @@ const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArr
  * @param {{ board: { tiles: readonly object[], size: number }, rules: object, cards: object[] }} ctx
  * @returns {string[]} 错误列表，空数组表示通过
  */
-export function validateState(state, { board, rules, cards }) {
+export function validateState(state, { board, rules: baseRules, cards }) {
   if (!isPlainObject(state)) return ['对局数据不是对象'];
   const errors = [];
   const err = (msg) => errors.push(msg);
+  // 回合上限等规则因模式而异，按这一局的模式校验
+  const knownMode = typeof state.mode === 'string' && Object.hasOwn(MODES, state.mode);
+  if (!knownMode) err(`未知对局模式: ${state.mode}`);
+  const rules = knownMode ? rulesFor(state.mode, Array.isArray(state.players) ? state.players.length : undefined) : baseRules;
 
   if (state.version !== STATE_VERSION) err(`对局数据版本不兼容: ${state.version}`);
   if (!Object.values(PHASES).includes(state.phase)) err(`未知阶段: ${state.phase}`);
@@ -134,7 +139,7 @@ export function validateState(state, { board, rules, cards }) {
 
   // ---- 终局
   if (state.phase === PHASES.GAME_OVER) {
-    if (!['bankruptcy', 'roundLimit'].includes(state.endReason)) err('终局原因无效');
+    if (!['bankruptcy', 'roundLimit', 'goal'].includes(state.endReason)) err('终局原因无效');
     if (state.winnerId !== null && !alive.some((p) => p.id === state.winnerId)) err('赢家无效');
   } else {
     if (alive.length < 2) err('未终局但存活玩家不足 2 人');

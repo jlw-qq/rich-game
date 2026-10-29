@@ -7,6 +7,7 @@
  */
 import { TILES, GROUPS } from './data/config/board.js';
 import { RULES } from './data/config/rules.js';
+import { DEFAULT_MODE, MODES, rulesFor } from './data/config/modes.js';
 import { CARDS } from './data/config/cards.js';
 import { createSaveStore, MAX_SAVE_LENGTH } from './data/save/saveFormat.js';
 import { createBoard } from './logic/core/board.js';
@@ -159,7 +160,7 @@ function frame(now) {
   }
   const shown = session ? selection.current(focus?.index ?? null) : null;
   const viewing = shown && shown.source !== 'landing' ? shown.index : null;
-  const card = shown ? tileCardInfo({ state: session.state, board, rules: RULES }, shown.index) : null;
+  const card = shown ? tileCardInfo({ state: session.state, board, rules: session.rules }, shown.index) : null;
   updateReadout(shown, card);
   // 棋盘中央留给城市景观，地产详情一律显示在侧栏
   cardPanel.render(card, shown?.source === 'landing' ? '落点' : '查看');
@@ -234,7 +235,7 @@ function renderPanel() {
   if (!session) return;
   const { state, game, animator, driver } = session;
   // AI 回合中人类按钮全部禁用
-  panel.render({ state, game, board, busy: animator.busy || driver.isAiTurn() });
+  panel.render({ state, game, board, busy: animator.busy || driver.isAiTurn(), rules: session.rules });
   if (state.phase === PHASES.GAME_OVER) results.show({ rows: computeRanking({ state, board }), state });
   else results.hide();
   if (!animator.busy) autosave();
@@ -260,14 +261,16 @@ function scheduleAi() {
 function startSession(state, intro) {
   if (session?.aiTimer) clearTimeout(session.aiTimer);
   const bus = createEventBus({ onError: (err) => console.error('事件监听器出错', err) });
-  const game = createGame({ board, rules: RULES, state, bus, cards: CARDS });
+  // 规则跟着这一局的模式走（旧存档迁移后为经典模式）
+  const rules = rulesFor(state.mode, state.players.length);
+  const game = createGame({ board, rules, state, bus, cards: CARDS });
   const fmtCtx = { state, board, cards: CARDS };
 
   const describe = createPopupDescriber();
   const animator = createAnimator({
     state,
     tileIds: board.tiles.map((t) => t.id),
-    describePopup: (type, payload) => describe(type, payload, { state, board, rules: RULES }),
+    describePopup: (type, payload) => describe(type, payload, { state, board, rules }),
     reducedMotion: reducedMotion.matches,
     onEvent(type, payload) {
       const text = formatEvent(type, payload, fmtCtx);
@@ -281,9 +284,9 @@ function startSession(state, intro) {
   animator.setSpeed(speed);
   animator.setCalm(state.players.every((p) => p.isAI));
   bus.on('*', animator.handle);
-  const driver = createAiDriver({ game, state, board, rules: RULES });
+  const driver = createAiDriver({ game, state, board, rules });
 
-  session = { state, game, animator, driver, aiTimer: null };
+  session = { state, game, animator, driver, rules, aiTimer: null };
   seenLandings = 0;
   selection.clear();
   selection.setHover(null);
@@ -298,14 +301,22 @@ function startSession(state, intro) {
   $('actions').querySelector('button')?.focus({ preventScroll: true });
 }
 
-/** @param {{ name: string, isAI: boolean, aiLevel?: string }[]} players */
-function startGame(players) {
+/**
+ * @param {{ name: string, isAI: boolean, aiLevel?: string }[]} players
+ * @param {string} [mode]
+ */
+function startGame(players, mode = DEFAULT_MODE) {
   const seed = (Math.random() * 2 ** 32) >>> 0;
-  const state = createInitialState({ board, rules: RULES, cards: CARDS, players, seed });
-  startSession(state, [
-    `游戏开始：${state.players.map((p) => p.name).join('、')}。每人初始资金 ${RULES.startingCash.toLocaleString('zh-CN')} 元`,
-    `第 1 轮 · ${state.players[0].name} 的回合`,
-  ]);
+  const rules = rulesFor(mode, players.length);
+  const state = createInitialState({ board, rules, cards: CARDS, players, seed, mode });
+  const lines = [
+    `${MODES[mode].name}开始：${state.players.map((p) => p.name).join('、')}。每人初始资金 ${rules.startingCash.toLocaleString('zh-CN')} 元`,
+  ];
+  if (rules.startingProperties > 0) lines.push(`开局每人随机分到 ${rules.startingProperties} 块地`);
+  const ends = [`打满 ${rules.maxRounds} 轮`, '只剩一人'];
+  if (rules.goalNetWorth > 0) ends.unshift(`有人总资产达到 ${rules.goalNetWorth.toLocaleString('zh-CN')} 元`);
+  lines.push(`结束条件：${ends.join('、')}`, `第 1 轮 · ${state.players[0].name} 的回合`);
+  startSession(state, lines);
 }
 
 /** @param {object} state 已通过校验的存档状态 */
@@ -372,7 +383,7 @@ async function importFile(file) {
  */
 function dispatch(action) {
   if (action.kind === 'newGame') return leaveToSetup();
-  if (action.kind === 'rematch') return session && startGame(playerSetupOf(session.state));
+  if (action.kind === 'rematch') return session && startGame(playerSetupOf(session.state), session.state.mode);
   // 动画播放中或 AI 回合，忽略人类操作
   if (!session || session.animator.busy || session.driver.isAiTurn()) return { ok: false, error: '现在不能操作' };
   if (action.kind === 'openTrade') {
@@ -408,6 +419,7 @@ const panel = createPanel({
   status: $('status'),
   actions: $('actions'),
   assets: $('assets'),
+  goal: $('goal'),
   onAction: dispatch,
   maxTradesPerTurn: RULES.maxTradesPerTurn,
 });

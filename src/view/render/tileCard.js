@@ -1,7 +1,7 @@
 /**
  * 表现层：整理地产卡片要显示的数据。纯函数，租金规则直接用逻辑层的 calcRent，不在这里重写。
  */
-import { calcRent, ownsFullGroup, upgradeBlocker } from '../../logic/systems/property.js';
+import { calcRent, ownsFullGroup, rentAt, upgradeBlocker } from '../../logic/systems/property.js';
 
 /** 卡片正文字号 = 格高 × 该比例（与 boardRenderer 一致） */
 export const CARD_TEXT_RATIO = 0.27;
@@ -50,7 +50,7 @@ export function upgradeText({ upgrade }, fmt) {
 
 /** @returns {TileCard['upgrade']} */
 function upgradeInfo(ctx, tile, prop) {
-  const rent = prop.level < ctx.rules.maxLevel ? tile.rent[prop.level + 1] : null;
+  const rent = prop.level < ctx.rules.maxLevel ? rentAt(tile, prop.level + 1, ctx.rules) : null;
   if (!prop.ownerId) return { kind: 'unowned', rent };
   if (prop.mortgaged) return { kind: 'mortgaged', rent };
   const blocker = upgradeBlocker(ctx, tile.id);
@@ -79,7 +79,7 @@ export function tileCardInfo(ctx, index) {
     maxLevel: rules.maxLevel,
     mortgaged: prop.mortgaged,
     owner: owner ? { name: owner.name, index: ownerIndex } : null,
-    rent: owner ? calcRent(ctx, tile.id) : tile.rent[0],
+    rent: owner ? calcRent(ctx, tile.id) : rentAt(tile, 0, rules),
     groupBonus: Boolean(owner) && !prop.mortgaged && prop.level === 0 && !owner.bankrupt && ownsFullGroup(ctx, owner.id, tile.group),
     upgrade: upgradeInfo(ctx, tile, prop),
   };

@@ -25,4 +25,10 @@ export const RULES = {
   maxRounds: 100,
   /** 每回合最多发起的交易次数，防止反复提议拖住对局 */
   maxTradesPerTurn: 3,
+  /** 租金倍数（乘在配置的租金上，四舍五入） */
+  rentMultiplier: 1,
+  /** 回合结束时总资产达到该值的玩家立即获胜；0 表示不启用 */
+  goalNetWorth: 0,
+  /** 开局随机分给每位玩家的地产块数 */
+  startingProperties: 0,
 };

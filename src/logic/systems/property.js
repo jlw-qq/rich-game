@@ -23,6 +23,16 @@ export function redeemCost(tile, rules) {
   return tile.mortgageValue + Math.ceil(round6(tile.mortgageValue * rules.mortgageInterestRate));
 }
 
+/**
+ * 某等级的基础租金（已乘租金倍数，四舍五入）。
+ * @param {{ rent: number[] }} tile
+ * @param {number} level
+ * @param {{ rentMultiplier: number }} rules
+ */
+export function rentAt(tile, level, rules) {
+  return Math.round(round6(tile.rent[level] * rules.rentMultiplier));
+}
+
 /** 卖一级建筑的退款（向下取整） */
 export function buildingRefund(tile, rules) {
   return Math.floor(round6(tile.upgradeCost * rules.buildingSellRate));
@@ -70,7 +80,7 @@ export function calcRent(ctx, tileId) {
   const owner = getPlayer(state, prop.ownerId);
   if (!owner || owner.bankrupt) return 0;
 
-  const base = tile.rent[prop.level];
+  const base = rentAt(tile, prop.level, rules);
   return prop.level === 0 && ownsFullGroup(ctx, prop.ownerId, tile.group)
     ? base * rules.groupRentMultiplier
     : base;

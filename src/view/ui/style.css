@@ -736,3 +736,46 @@ select:focus-visible {
   font-weight: 600;
   color: var(--muted);
 }
+
+/* ---------- 对局模式与终局条件 ---------- */
+
+.setup-modes {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.setup-mode {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+.setup-mode input {
+  margin-top: 4px;
+}
+
+.setup-mode-text {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.9rem;
+}
+
+.goal {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  box-shadow: var(--paper-shadow);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.goal[hidden] {
+  display: none;
+}

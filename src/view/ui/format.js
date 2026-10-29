@@ -118,9 +118,9 @@ export function formatEvent(type, p, { state, board, cards }) {
         : `${name(p.debtorId)} 的地产收归银行`;
     case 'gameOver':
       if (!p.winnerId) return '游戏结束，没有赢家';
-      return p.reason === 'roundLimit'
-        ? `打满 ${state.round} 轮，${name(p.winnerId)} 以总资产最高获胜！`
-        : `${name(p.winnerId)} 获胜！其他玩家全部破产`;
+      if (p.reason === 'roundLimit') return `打满 ${state.round} 轮，${name(p.winnerId)} 以总资产最高获胜！`;
+      if (p.reason === 'goal') return `${name(p.winnerId)} 总资产率先达到目标，获胜！`;
+      return `${name(p.winnerId)} 获胜！其他玩家全部破产`;
     default:
       return null;
   }

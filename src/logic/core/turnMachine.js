@@ -73,7 +73,7 @@ export function createTurnMachine(state, bus, { maxRounds = Infinity, pickWinner
   /**
    * 进入终局。
    * @param {string | null} winnerId
-   * @param {'bankruptcy' | 'roundLimit'} reason
+   * @param {'bankruptcy' | 'roundLimit' | 'goal'} reason
    */
   function finishGame(winnerId, reason) {
     if (state.phase === P.GAME_OVER) return fail('游戏已结束');

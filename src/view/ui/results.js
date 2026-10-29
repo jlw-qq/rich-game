@@ -16,10 +16,10 @@ export function createResults(root) {
    */
   function show({ rows, state }) {
     const seatOf = (id) => state.players.findIndex((p) => p.id === id);
-    const reason =
-      state.endReason === 'roundLimit'
-        ? `打满 ${state.round} 轮回合上限，按总资产排名`
-        : '其他玩家全部破产';
+    const reason = {
+      roundLimit: `打满 ${state.round} 轮回合上限，按总资产排名`,
+      goal: `第 ${state.round} 轮有人总资产率先达到目标`,
+    }[state.endReason] ?? '其他玩家全部破产';
 
     root.replaceChildren(
       brandHeading('h2', 28, { id: 'results-title', suffix: '本局结算' }),

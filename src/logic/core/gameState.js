@@ -4,9 +4,13 @@
 import { PHASES } from './turnMachine.js';
 import { createRng } from '../utils/rng.js';
 import { buildDecks, validateCards } from '../systems/cards.js';
+import { MODES } from '../../data/config/modes.js';
 
-/** 版本 2：新增交易（pendingTrade、tradesThisTurn） */
-export const STATE_VERSION = 2;
+/**
+ * 版本 2：新增交易（pendingTrade、tradesThisTurn）
+ * 版本 3：新增对局模式（mode），规则按模式取，见 data/config/modes.js
+ */
+export const STATE_VERSION = 3;
 export const MAX_NAME_LENGTH = 12;
 /** AI 难度 */
 export const AI_LEVELS = ['easy', 'normal'];
@@ -57,20 +61,29 @@ export function validatePlayerSetup(players, rules) {
  *   rules: { startingCash: number, minPlayers: number, maxPlayers: number },
  *   players: { name: string, isAI?: boolean }[],
  *   seed: number,
- * }} options
+ *   mode?: string,
+ * }} options rules 须是该模式的规则（rulesFor(mode)）
  */
-export function createInitialState({ board, rules, players, seed, cards = [] }) {
+export function createInitialState({ board, rules, players, seed, cards = [], mode = 'classic' }) {
   const errors = validatePlayerSetup(players, rules);
   if (!Number.isInteger(seed)) errors.push(`seed 必须是整数，实际为 ${seed}`);
+  if (!Object.hasOwn(MODES, mode)) errors.push(`未知对局模式: ${mode}`);
   errors.push(...validateCards(cards, board));
   if (errors.length > 0) throw new GameSetupError(errors);
 
   // 洗牌和骰子共用同一条随机序列，开局洗完后把状态交给骰子
   const rng = createRng(seed);
   const decks = buildDecks(cards, rng);
+  const properties = Object.fromEntries(
+    board.tiles.filter((t) => t.type === 'property').map((t) => [t.id, { ownerId: null, level: 0, mortgaged: false }]),
+  );
+  // 开局分地也用同一条随机序列：同一个种子，地图和后面的骰子都一样
+  dealStartingProperties({ board, properties, count: rules.startingProperties, playerCount: players.length, rng });
 
   return {
     version: STATE_VERSION,
+    /** 对局模式，见 data/config/modes.js */
+    mode,
     phase: PHASES.AWAIT_ROLL,
     /** 累计行动回合数（每位玩家行动一次算一回合），从 1 开始 */
     turn: 1,
@@ -96,11 +109,7 @@ export function createInitialState({ board, rules, players, seed, cards = [] }) 
       jailFreeCards: [],
     })),
     /** 地产归属，key 为格子 id */
-    properties: Object.fromEntries(
-      board.tiles
-        .filter((t) => t.type === 'property')
-        .map((t) => [t.id, { ownerId: null, level: 0, mortgaged: false }]),
-    ),
+    properties,
     /** 未付清的欠款：{ debtorId, creditorId（null 表示银行）, amount, reason } */
     pendingDebt: null,
     /** 等待答复的交易：{ fromId, toId, give, take }，见 systems/trade.js */
@@ -113,7 +122,7 @@ export function createInitialState({ board, rules, players, seed, cards = [] }) 
     /** AI 决策用的随机数状态，与骰子分开，存档后 AI 的选择也能复现 */
     aiRngState: (seed ^ 0x9e3779b9) >>> 0,
     winnerId: null,
-    /** 终局原因：'bankruptcy' | 'roundLimit' */
+    /** 终局原因：'bankruptcy' | 'roundLimit' | 'goal' */
     endReason: null,
   };
 }
@@ -124,8 +133,33 @@ export function createInitialState({ board, rules, players, seed, cards = [] }) 
  */
 export function migrateState(state) {
   if (!state || typeof state !== 'object' || Array.isArray(state)) return state;
-  if (state.version === 1) {
-    return { ...state, version: 2, pendingTrade: null, tradesThisTurn: 0 };
+  let s = state;
+  if (s.version === 1) s = { ...s, version: 2, pendingTrade: null, tradesThisTurn: 0 };
+  // 版本 3 之前只有经典规则
+  if (s.version === 2) s = { ...s, version: 3, mode: 'classic' };
+  return s;
+}
+
+/**
+ * 开局随机分地：轮流给每位玩家发 count 块。不会一开局就让人凑齐整个颜色组（否则可以立刻盖房）。
+ * count 为 0 时不消耗随机数，经典模式的开局与以前完全一致。
+ */
+function dealStartingProperties({ board, properties, count, playerCount, rng }) {
+  if (count <= 0) return;
+  const pool = board.tiles.filter((t) => t.type === 'property');
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rng.next() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
   }
-  return state;
+  const ownsAllOthers = (tile, ownerId) =>
+    board.getGroupTiles(tile.group).every((t) => t.id === tile.id || properties[t.id].ownerId === ownerId);
+  for (let round = 0; round < count; round++) {
+    for (let p = 0; p < playerCount; p++) {
+      const ownerId = `p${p + 1}`;
+      const k = pool.findIndex((t) => !ownsAllOthers(t, ownerId));
+      if (k < 0) return;
+      properties[pool[k].id].ownerId = ownerId;
+      pool.splice(k, 1);
+    }
+  }
 }

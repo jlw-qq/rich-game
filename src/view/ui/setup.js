@@ -4,6 +4,7 @@
 import { el } from './dom.js';
 import { PLAYER_COLORS } from '../render/theme.js';
 import { brandHeading } from './brandHeading.js';
+import { DEFAULT_MODE, MODES } from '../../data/config/modes.js';
 
 const DEFAULT_NAMES = ['小红', '小蓝', '小黄', '小绿', '小紫'];
 
@@ -19,13 +20,14 @@ const KINDS = {
  *   root: HTMLElement,
  *   rules: { minPlayers: number, maxPlayers: number },
  *   validate: (players: object[]) => string[],
- *   onStart: (players: { name: string, isAI: boolean, aiLevel?: string }[]) => void,
+ *   onStart: (players: { name: string, isAI: boolean, aiLevel?: string }[], mode: string) => void,
  *   onImport: (file: File) => Promise<string | null>,
  * }} options onImport 返回错误信息，成功返回 null
  */
 export function createSetup({ root, rules, validate, onStart, onImport }) {
   let count = 2;
   let resume = null;
+  let mode = DEFAULT_MODE;
   const names = [...DEFAULT_NAMES];
   // 默认第 1 位是人类，其余是普通 AI
   const kinds = DEFAULT_NAMES.map((_, i) => (i === 0 ? 'human' : 'normal'));
@@ -90,7 +92,7 @@ export function createSetup({ root, rules, validate, onStart, onImport }) {
             errorBox.replaceChildren(...errors.map((msg) => el('li', {}, msg)));
             return;
           }
-          onStart(players);
+          onStart(players, mode);
         },
       },
       brandHeading('h1', 44),
@@ -106,6 +108,26 @@ export function createSetup({ root, rules, validate, onStart, onImport }) {
             el('button', { type: 'button', class: 'btn btn-danger', onclick: resume.onDiscard }, '删除存档'),
           ),
         ),
+      el(
+        'fieldset',
+        { class: 'setup-modes' },
+        el('legend', {}, '对局模式'),
+        Object.entries(MODES).map(([key, m]) =>
+          el(
+            'label',
+            { class: 'setup-mode', for: `setup-mode-${key}` },
+            el('input', {
+              type: 'radio',
+              name: 'setup-mode',
+              id: `setup-mode-${key}`,
+              value: key,
+              checked: mode === key,
+              onchange: () => (mode = key),
+            }),
+            el('span', { class: 'setup-mode-text' }, el('strong', {}, m.name), el('span', { class: 'muted' }, m.blurb)),
+          ),
+        ),
+      ),
       el('div', { class: 'setup-row' }, el('label', { for: 'setup-count' }, '玩家人数'), countSelect),
       rows,
       errorBox,
