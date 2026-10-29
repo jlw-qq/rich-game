@@ -28,12 +28,22 @@ export const TILE_COLORS = {
 
 /** 棋盘中央与格子装饰 */
 export const BOARD_COLORS = {
-  center: '#2c5e47',
+  /** 中央积木底板 */
+  center: '#5a9150',
+  /** 底板上的凸点：亮面和暗面 */
+  studLight: 'rgba(255, 255, 255, 0.22)',
+  studDark: 'rgba(20, 50, 15, 0.28)',
+  /** 城市中心广场（放骰子），以及写在广场上的小字 */
+  plaza: '#e9dfc9',
+  plazaText: '#3b2a1a',
   /** 统一的格子描边 */
-  outline: 'rgba(20, 24, 32, 0.55)',
-  shadow: 'rgba(0, 0, 0, 0.45)',
-  text: '#222',
-  subText: '#555',
+  outline: 'rgba(60, 40, 20, 0.55)',
+  /** 积木块顶面边缘的高光，做出倒角感 */
+  bevel: 'rgba(255, 255, 255, 0.75)',
+  /** 投影偏暖，落在木桌上更自然 */
+  shadow: 'rgba(60, 35, 10, 0.45)',
+  text: '#2b2118',
+  subText: '#5e4d3b',
 };
 
 /** 非地产格的图标颜色，比格子底色深，保证对比度 */
@@ -59,7 +69,7 @@ export const STYLE = {
   /** 圆角：卡片、骰子 */
   radius: 0.16,
   /** 浮起元素（卡片、骰子、标题）的阴影 */
-  liftShadow: { color: 'rgba(0, 0, 0, 0.45)', blur: 0.35, offsetY: 0.06 },
+  liftShadow: { color: 'rgba(60, 35, 10, 0.45)', blur: 0.35, offsetY: 0.06 },
 };
 
 /** WCAG 规定的小字最低对比度 */

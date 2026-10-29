@@ -5,6 +5,7 @@
  */
 import { gridOf } from './layout.js';
 import { diceBounce, easeInOut, popScale } from './easing.js';
+import { POPUP_MS, TOAST_MS } from './popup.js';
 
 export { easeInOut };
 
@@ -69,13 +70,15 @@ const CASH_DELTAS = {
  * @param {{
  *   state: { players: { id: string, position: number }[] },
  *   tileIds?: readonly string[],
+ *   describePopup?: (type: string, payload: object) => object | null,
  *   reducedMotion?: boolean,
  *   onEvent?: (type: string, payload: object) => void,
  *   onChange?: () => void,
  *   onIdle?: () => void,
- * }} options tileIds 为按下标排列的格子 id，用来把地产特效对应到落点格
+ * }} options tileIds 为按下标排列的格子 id，用来把地产特效对应到落点格；
+ *   describePopup 把关键事件翻译成结果卡内容，返回 null 表示该事件不弹卡
  */
-export function createAnimator({ state, tileIds = [], reducedMotion = false, onEvent = () => {}, onChange = () => {}, onIdle = () => {} }) {
+export function createAnimator({ state, tileIds = [], describePopup = () => null, reducedMotion = false, onEvent = () => {}, onChange = () => {}, onIdle = () => {} }) {
   const tokens = new Map(state.players.map((p) => [p.id, { ...gridOf(p.position), z: 0 }]));
   /** bounce：落定弹跳的上抬和压扁，静止时为 { lift: 0, scaleX: 1, scaleY: 1 } */
   const dice = { values: [1, 1], rolling: false, bounce: diceBounce(1) };
@@ -95,6 +98,11 @@ export function createAnimator({ state, tileIds = [], reducedMotion = false, onE
    * @type {{ index: number, at: number } | null}
    */
   let focus = null;
+  /**
+   * 当前结果卡：{ data, born, ms, toast }。普通对局时阻塞后续事件；观战模式是不阻塞的提示条。
+   * @type {{ data: object, born: number, ms: number, toast: boolean } | null}
+   */
+  let popup = null;
   /** 观战模式（全是 AI）：光边只淡入淡出一次，不做脉冲，减少闪烁 */
   let calm = false;
   /** 落地次数，每次落地加 1，供外部判断“有新落点” */
@@ -145,6 +153,18 @@ export function createAnimator({ state, tileIds = [], reducedMotion = false, onE
     addEffects(type, p);
     // 在落点格付租金或交税：金额出现后光边交棒，顺序是“停在这里 → 付了多少”
     if (type === 'paymentMade' && p.reason?.tileId) handOff(p.reason.tileId);
+
+    // 关键事件弹结果卡。时长不受“减少动态效果”影响（那只是去掉弹出动画），按倍速缩短
+    const card = describePopup(type, p);
+    if (card) {
+      if (calm) {
+        popup = { data: card, born: lastNow, ms: TOAST_MS / speed, toast: true };
+      } else {
+        const ms = POPUP_MS / speed;
+        popup = { data: card, born: lastNow, ms, toast: false };
+        return { duration: ms, update() {} };
+      }
+    }
 
     switch (type) {
       case 'diceRolled':
@@ -240,6 +260,7 @@ export function createAnimator({ state, tileIds = [], reducedMotion = false, onE
 
     floaters = floaters.filter((f) => now - f.born < FLOAT_MS);
     for (const [id, e] of effects) if (now - e.born >= e.ms) effects.delete(id);
+    if (popup && now - popup.born >= popup.ms) popup = null;
     const bouncing = diceLandedAt !== null && now - diceLandedAt < DICE_BOUNCE_MS / speed;
     dice.bounce = diceBounce(bouncing ? (now - diceLandedAt) / (DICE_BOUNCE_MS / speed) : 1);
     if (!bouncing) diceLandedAt = null;
@@ -249,7 +270,7 @@ export function createAnimator({ state, tileIds = [], reducedMotion = false, onE
       onIdle();
     }
     const highlighting = focus !== null && now - focus.at < highlightMs() && !(now - (focus.cutAt ?? Infinity) >= GLOW_HANDOFF_MS / speed);
-    return busy || floaters.length > 0 || highlighting || bouncing || effects.size > 0;
+    return busy || floaters.length > 0 || highlighting || bouncing || effects.size > 0 || popup !== null;
   }
 
   return {
@@ -284,6 +305,14 @@ export function createAnimator({ state, tileIds = [], reducedMotion = false, onE
     /** @param {boolean} value 是否为观战模式（全是 AI） */
     setCalm(value) {
       calm = Boolean(value);
+    },
+    /**
+     * 当前结果卡和进度。
+     * @returns {{ data: object, t: number, toast: boolean } | null}
+     */
+    get popup() {
+      if (!popup) return null;
+      return { data: popup.data, t: Math.min(1, (lastNow - popup.born) / popup.ms), toast: popup.toast };
     },
     /** 累计落地次数 */
     get landings() {

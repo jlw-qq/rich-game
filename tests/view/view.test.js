@@ -265,3 +265,13 @@ describe('移动节奏', () => {
     expect(doneAt(4, 5)).toBe((5 * STEP + LAND_PAUSE_MS) / 4);
   });
 });
+
+describe('事件日志收起', () => {
+  it('条数不超过收起显示数时不需要按钮；否则显示展开或收起', async () => {
+    const { COLLAPSED_COUNT, logToggleLabel } = await import('../../src/view/ui/log.js');
+    expect(logToggleLabel(0, false)).toBeNull();
+    expect(logToggleLabel(COLLAPSED_COUNT, false)).toBeNull();
+    expect(logToggleLabel(COLLAPSED_COUNT + 1, false)).toBe(`展开全部记录（共 ${COLLAPSED_COUNT + 1} 条）`);
+    expect(logToggleLabel(50, true)).toBe('收起记录');
+  });
+});

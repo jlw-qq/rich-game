@@ -21,6 +21,7 @@ import { createAiDriver } from './logic/ai/driver.js';
 import { createBoardRenderer } from './view/render/boardRenderer.js';
 import { createAnimator } from './view/render/animator.js';
 import { isCompactCard, tileCardInfo } from './view/render/tileCard.js';
+import { createPopupDescriber } from './view/render/popup.js';
 import { createSound } from './view/audio/sound.js';
 import { formatEvent } from './view/ui/format.js';
 import { createLog } from './view/ui/log.js';
@@ -40,7 +41,6 @@ const saveCtx = { board, rules: RULES, cards: CARDS };
 const canvas = /** @type {HTMLCanvasElement} */ ($('board'));
 const renderer = createBoardRenderer(canvas);
 const sound = createSound();
-const log = createLog($('log'));
 const results = createResults($('results'));
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -53,6 +53,27 @@ function getStorage() {
   }
 }
 const saveStore = createSaveStore(getStorage());
+
+/** 事件日志的展开状态只是本机偏好，读写失败时默认收起 */
+const LOG_EXPANDED_KEY = 'rich-game:log-expanded';
+function loadLogExpanded() {
+  try {
+    return getStorage()?.getItem(LOG_EXPANDED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+const log = createLog($('log'), {
+  toggle: /** @type {HTMLButtonElement} */ ($('log-toggle')),
+  expanded: loadLogExpanded(),
+  onToggle(expanded) {
+    try {
+      getStorage()?.setItem(LOG_EXPANDED_KEY, expanded ? '1' : '0');
+    } catch {
+      // 存不下只影响下次打开时的默认状态
+    }
+  },
+});
 
 /** 事件 → 音效 */
 const EVENT_SOUNDS = {
@@ -138,9 +159,8 @@ function frame(now) {
   const viewing = shown && shown.source !== 'landing' ? shown.index : null;
   const card = shown ? tileCardInfo({ state: session.state, board, rules: RULES }, shown.index) : null;
   updateReadout(shown, card);
-  // 按卡片实际字号判断（已包含画布宽高），字太小时详细信息放到侧栏
-  const compactCard = isCompactCard(renderer.cellHeight);
-  cardPanel.render(compactCard ? card : null, shown?.source === 'landing' ? '落点' : '查看');
+  // 棋盘中央留给城市景观，地产详情一律显示在侧栏
+  cardPanel.render(card, shown?.source === 'landing' ? '落点' : '查看');
   renderer.draw({
     board,
     state: session?.state ?? null,
@@ -151,10 +171,9 @@ function frame(now) {
     currentPlayerId: session && session.state.phase !== PHASES.GAME_OVER ? (session.game.currentPlayer()?.id ?? null) : null,
     focus,
     viewing,
-    // 卡片内容每帧从当前状态读取，买下、升级后立刻更新
-    card,
-    cardLabel: shown ? (shown.source === 'landing' ? '落点' : '查看') : null,
-    compactCard,
+    maxLevel: RULES.maxLevel,
+    popup: animator?.popup ?? null,
+    reducedMotion: reducedMotion.matches,
     view: viewport.view,
   });
   if (needMore || viewMoving) requestFrame();
@@ -242,9 +261,11 @@ function startSession(state, intro) {
   const game = createGame({ board, rules: RULES, state, bus, cards: CARDS });
   const fmtCtx = { state, board, cards: CARDS };
 
+  const describe = createPopupDescriber();
   const animator = createAnimator({
     state,
     tileIds: board.tiles.map((t) => t.id),
+    describePopup: (type, payload) => describe(type, payload, { state, board, rules: RULES }),
     reducedMotion: reducedMotion.matches,
     onEvent(type, payload) {
       const text = formatEvent(type, payload, fmtCtx);

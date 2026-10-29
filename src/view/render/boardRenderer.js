@@ -5,7 +5,8 @@ import { computeLayout, gridOf, outwardOf, project, tileAt, TILE_SCALE } from '.
 import { BOARD_COLORS, GROUP_COLORS, GROUP_HEADERS, ICON_COLORS, PLAYER_COLORS, STYLE, TILE_COLORS, shade } from './theme.js';
 import { drawIcon } from './icons.js';
 import { easeOutBack, flash } from './easing.js';
-import { CARD_TEXT_RATIO, upgradeText } from './tileCard.js';
+import { cityLots, createCityPainter } from './city.js';
+import { drawPopup } from './popup.js';
 
 const FONT = 'system-ui, "Microsoft YaHei", sans-serif';
 const CORNER_TYPES = ['start', 'jail', 'parking', 'goToJail'];
@@ -13,19 +14,18 @@ const CORNER_TYPES = ['start', 'jail', 'parking', 'goToJail'];
 const HALF = TILE_SCALE / 2;
 /** 地产组色带的宽度（网格单位），画在格子朝外的一侧 */
 const BAND = 0.2;
-/** 中央纹理的格距（网格单位）和透明度 */
-const TEXTURE_STEP = 0.5;
-const TEXTURE_ALPHA = 0.06;
+/** 中央底板凸点的间距（网格单位）和半径（格宽为单位） */
+const STUD_STEP = 1;
+const STUD_RADIUS = 0.11;
 /** 抵押遮罩的最终不透明度 */
 const MORTGAGE_ALPHA = 0.55;
 /** 查看中的格子描边颜色（与落点的金色区分） */
-const VIEW_COLOR = '#ffffff';
+const VIEW_COLOR = '#2f6fb3';
 /** 落点高亮颜色 */
-const HIGHLIGHT_COLOR = '#ffe066';
-/** 地产卡片尺寸：宽以格宽为单位，各行高以格高为单位 */
-const CARD_WIDTH = 3;
-const CARD_HEADER = 0.6;
-const CARD_ROW = 0.58;
+const HIGHLIGHT_COLOR = '#ff9f1c';
+/** 中央广场（放骰子）的网格范围 */
+const PLAZA_MIN = 3.4;
+const PLAZA_MAX = 6.6;
 /** 中央区域的网格范围，与外圈格子的内边对齐 */
 const CENTER_MIN = 0.5;
 const CENTER_MAX = 9.5;
@@ -60,6 +60,11 @@ export function createBoardRenderer(canvas) {
   let layout = computeLayout(cssWidth, cssHeight);
   /** 本帧的格子特效（tileId → { kind, level, t }），由 draw 传入 */
   let effects = new Map();
+  /** 本帧地产格的城市名位置 */
+  let names = [];
+  /** 中央城市：地块位置固定，按棋盘计算一次 */
+  let lots = null;
+  let city = createCityPainter(ctx, layout, (gx, gy) => project(layout, gx, gy));
 
   /** 按 CSS 尺寸和设备像素比重设画布分辨率 */
   function resize(width, height) {
@@ -70,6 +75,7 @@ export function createBoardRenderer(canvas) {
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(height * dpr);
     layout = computeLayout(width, height);
+    city = createCityPainter(ctx, layout, (gx, gy) => project(layout, gx, gy));
   }
 
   function polygon(points) {
@@ -102,7 +108,7 @@ export function createBoardRenderer(canvas) {
   }
 
   /** 中央：底色 + 沿等距方向的细格纹 + 内阴影，看起来比外圈格子低一层 */
-  function drawCenter(state, dice) {
+  function drawCenter() {
     const { th } = layout;
     centerPath();
     ctx.fillStyle = BOARD_COLORS.center;
@@ -111,26 +117,29 @@ export function createBoardRenderer(canvas) {
     ctx.save();
     centerPath();
     ctx.clip();
-    ctx.strokeStyle = `rgba(255, 255, 255, ${TEXTURE_ALPHA})`;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let g = CENTER_MIN + TEXTURE_STEP; g < CENTER_MAX; g += TEXTURE_STEP) {
-      const a = project(layout, g, CENTER_MIN);
-      const b = project(layout, g, CENTER_MAX);
-      const c = project(layout, CENTER_MIN, g);
-      const d = project(layout, CENTER_MAX, g);
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.moveTo(c.x, c.y);
-      ctx.lineTo(d.x, d.y);
+    // 积木底板的凸点：每个凸点是一个暗色底 + 偏上的亮面
+    const rx = layout.tw * STUD_RADIUS;
+    const ry = rx / 2;
+    const lift = ry * 0.6;
+    for (let gx = CENTER_MIN + STUD_STEP / 2; gx < CENTER_MAX; gx += STUD_STEP) {
+      for (let gy = CENTER_MIN + STUD_STEP / 2; gy < CENTER_MAX; gy += STUD_STEP) {
+        const p = project(layout, gx, gy);
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y, rx, ry, 0, 0, Math.PI * 2);
+        ctx.fillStyle = BOARD_COLORS.studDark;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y - lift, rx, ry, 0, 0, Math.PI * 2);
+        ctx.fillStyle = BOARD_COLORS.studLight;
+        ctx.fill();
+      }
     }
-    ctx.stroke();
 
     // 内阴影：沿边缘画一圈带模糊的粗描边，裁剪后只剩区域内的部分
     centerPath();
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+    ctx.shadowColor = 'rgba(20, 40, 10, 0.5)';
     ctx.shadowBlur = th * 0.6;
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.strokeStyle = 'rgba(20, 40, 10, 0.3)';
     ctx.lineWidth = th * 0.25;
     ctx.stroke();
     ctx.restore();
@@ -140,18 +149,58 @@ export function createBoardRenderer(canvas) {
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    const c = project(layout, 5, 5);
+    // 城市中心的广场：浅色石板地，骰子放在这里
+    polygon(
+      [
+        [PLAZA_MIN, PLAZA_MIN],
+        [PLAZA_MAX, PLAZA_MIN],
+        [PLAZA_MAX, PLAZA_MAX],
+        [PLAZA_MIN, PLAZA_MAX],
+      ].map(([gx, gy]) => {
+        const p = project(layout, gx, gy);
+        return [p.x, p.y];
+      }),
+    );
+    ctx.fillStyle = BOARD_COLORS.plaza;
+    ctx.fill();
+    ctx.strokeStyle = BOARD_COLORS.outline;
+    ctx.lineWidth = STYLE.line;
+    ctx.stroke();
+  }
+
+  /** 城市名补画在建筑之上，带浅色描边，被高楼压住时也能读清 */
+  function drawNames() {
+    const { tw, th } = layout;
     ctx.save();
-    liftShadow(0.5);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-    ctx.font = `bold ${th * 0.9}px ${FONT}`;
-    ctx.fillText('大富翁', c.x, c.y - th * 2.6);
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(255, 252, 244, 0.9)';
+    ctx.lineWidth = Math.max(2, th * 0.08);
+    for (const n of names) {
+      ctx.font = `bold ${th * 0.27}px ${FONT}`;
+      const w = ctx.measureText(n.text).width;
+      if (w > tw * 0.5) ctx.font = `bold ${(th * 0.27 * tw * 0.5) / w}px ${FONT}`;
+      ctx.strokeText(n.text, n.x, n.y);
+      ctx.fillStyle = BOARD_COLORS.text;
+      ctx.fillText(n.text, n.x, n.y);
+    }
     ctx.restore();
-    if (dice) drawDice({ x: c.x, y: c.y - th * 1.3 }, dice);
+  }
+
+  /** 标题、骰子、轮数：画在城市建筑之上，不会被楼挡住 */
+  function drawCenterLabels(state, dice) {
+    const { th } = layout;
+    const c = project(layout, 5, 5);
+    // 标题写在浅色广场上，用深色字
+    ctx.save();
+    ctx.fillStyle = BOARD_COLORS.plazaText;
+    ctx.font = `bold ${th * 0.6}px ${FONT}`;
+    ctx.fillText('大富翁', c.x, c.y - th * 1.2);
+    ctx.restore();
+    if (dice) drawDice({ x: c.x, y: c.y - th * 0.15 }, dice);
     if (state) {
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
-      ctx.font = `${th * 0.34}px ${FONT}`;
-      ctx.fillText(`第 ${state.round} 轮`, c.x, c.y - th * 0.45);
+      ctx.fillStyle = BOARD_COLORS.plazaText;
+      ctx.font = `bold ${th * 0.3}px ${FONT}`;
+      ctx.fillText(`第 ${state.round} 轮`, c.x, c.y + th * 0.75);
     }
   }
 
@@ -162,118 +211,6 @@ export function createBoardRenderer(canvas) {
     ctx.shadowColor = s.color;
     ctx.shadowBlur = th * s.blur * scale;
     ctx.shadowOffsetY = th * s.offsetY * scale;
-  }
-
-  /** 左对齐或右对齐写一行字，超出 maxWidth 时缩小字号 */
-  function alignedText(text, x, y, size, maxWidth, color, align, weight = 'normal') {
-    ctx.save();
-    ctx.textAlign = align;
-    fitText(text, x, y, size, maxWidth, color, weight);
-    ctx.restore();
-  }
-
-  /**
-   * 地产卡片，画在中央区域下半部分，不挡格子。
-   * @param {import('./tileCard.js').TileCard} card
-   */
-  function drawCard(card, label, compact) {
-    const { tw, th } = layout;
-    const c = project(layout, 5, 5);
-    const w = CARD_WIDTH * tw;
-    // 紧凑模式（小画布）只画标题栏，详细信息在侧栏
-    const h = (compact ? CARD_HEADER : CARD_HEADER + CARD_ROW * 3 + 0.12) * th;
-    const left = c.x - w / 2;
-    const top = c.y + th * 0.15;
-    const pad = tw * 0.12;
-    const radius = th * STYLE.radius;
-    const header = GROUP_HEADERS[card.group];
-
-    ctx.save();
-    liftShadow();
-    ctx.beginPath();
-    ctx.roundRect(left, top, w, h, radius);
-    ctx.fillStyle = TILE_COLORS.property;
-    ctx.fill();
-    ctx.restore();
-
-    // 组色标题栏
-    ctx.save();
-    ctx.beginPath();
-    ctx.roundRect(left, top, w, h, radius);
-    ctx.clip();
-    ctx.fillStyle = header.bg;
-    ctx.fillRect(left, top, w, CARD_HEADER * th);
-    ctx.restore();
-    ctx.beginPath();
-    ctx.roundRect(left, top, w, h, radius);
-    ctx.strokeStyle = BOARD_COLORS.outline;
-    ctx.lineWidth = STYLE.line;
-    ctx.stroke();
-
-    const size = th * CARD_TEXT_RATIO;
-    const half = w / 2 - pad * 1.5;
-    const headerText = header.text;
-    fitText(card.name, c.x, top + (CARD_HEADER * th) / 2, th * 0.36, w * 0.56, headerText, 'bold');
-    if (label) {
-      ctx.save();
-      ctx.globalAlpha = 0.85;
-      alignedText(label, left + w - pad, top + (CARD_HEADER * th) / 2, th * 0.22, w * 0.18, headerText, 'right');
-      ctx.restore();
-    }
-    if (compact) return;
-
-    const row = (k) => top + (CARD_HEADER + CARD_ROW * (k + 0.5)) * th;
-    const num = (n) => `¥${n.toLocaleString('zh-CN')}`;
-    const xl = left + pad;
-    const xr = left + w - pad;
-
-    // 第 1 行：售价 | 租金
-    alignedText(`售价 ${num(card.price)}`, xl, row(0), size, half, BOARD_COLORS.text, 'left');
-    const rentText = card.mortgaged ? '已抵押，免租' : `${card.owner ? '租金' : '空地租金'} ${num(card.rent)}`;
-    alignedText(rentText, xr, row(0), size, half, card.mortgaged ? '#a33b3b' : BOARD_COLORS.text, 'right', 'bold');
-
-    // 第 2 行：所有者 | 整组翻倍
-    if (card.owner) {
-      const r = th * 0.1;
-      ctx.beginPath();
-      ctx.arc(xl + r, row(1), r, 0, Math.PI * 2);
-      ctx.fillStyle = PLAYER_COLORS[card.owner.index] ?? '#999';
-      ctx.fill();
-      ctx.strokeStyle = '#222';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      alignedText(card.owner.name, xl + r * 2.8, row(1), size, half - r * 2.8, BOARD_COLORS.text, 'left');
-    } else {
-      alignedText('无主 · 可购买', xl, row(1), size, half, BOARD_COLORS.subText, 'left');
-    }
-    if (card.groupBonus) alignedText('整组租金 ×2', xr, row(1), size, half, '#2f7d4a', 'right', 'bold');
-
-    // 第 3 行：建筑等级（实心为已建）| 升级说明
-    const hs = th * 0.2;
-    for (let k = 0; k < card.maxLevel; k++) {
-      const x = xl + hs / 2 + k * hs * 1.35;
-      const y = row(2);
-      polygon([
-        [x - hs / 2, y + hs / 2],
-        [x - hs / 2, y - hs * 0.05],
-        [x, y - hs / 2],
-        [x + hs / 2, y - hs * 0.05],
-        [x + hs / 2, y + hs / 2],
-      ]);
-      if (k < card.level) {
-        ctx.fillStyle = card.level >= card.maxLevel ? '#c0392b' : '#2e8b57';
-        ctx.fill();
-      } else {
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-      }
-    }
-    // 房子图标后写“n/4”，升级说明用剩下的宽度
-    const levelX = xl + hs * 1.35 * card.maxLevel;
-    alignedText(`${card.level}/${card.maxLevel}`, levelX, row(2), size, tw * 0.3, BOARD_COLORS.text, 'left', 'bold');
-    const used = levelX - xl + size * 2;
-    alignedText(upgradeText(card, num), xr, row(2), size, w - pad * 3 - used, BOARD_COLORS.subText, 'right');
   }
 
   /** 查看中的格子：白色细描边 */
@@ -455,6 +392,18 @@ export function createBoardRenderer(canvas) {
     grad.addColorStop(1, shade(top, 0.93));
     ctx.fillStyle = grad;
     ctx.fill();
+    polygon([offset(c, -HALF, HALF), offset(c, -HALF, -HALF), offset(c, HALF, -HALF)]);
+    ctx.save();
+    ctx.clip();
+    ctx.beginPath();
+    const inset = 1.5;
+    ctx.moveTo(c.x - hw + inset * 2, c.y);
+    ctx.lineTo(c.x, c.y - hh + inset);
+    ctx.lineTo(c.x + hw - inset * 2, c.y);
+    ctx.strokeStyle = BOARD_COLORS.bevel;
+    ctx.lineWidth = Math.max(1, th * 0.03);
+    ctx.stroke();
+    ctx.restore();
 
     const out = isProperty ? outwardOf(tile.index) : null;
     const fx = isProperty ? effects.get(tile.id) : null;
@@ -493,6 +442,8 @@ export function createBoardRenderer(canvas) {
     const [mx, my] = out ? offset(c, (-out[0] * BAND) / 2, (-out[1] * BAND) / 2) : [c.x, c.y];
     const m = { x: mx, y: my };
     fitText(tile.name, m.x, m.y - th * 0.08, th * 0.27, tw * 0.5, BOARD_COLORS.text, 'bold');
+    // 记下位置：中央的高楼可能挡住后排格子的名字，画完城市后再补一遍
+    names.push({ text: tile.name, x: m.x, y: m.y - th * 0.08 });
 
     if (!prop?.ownerId) {
       fitText(`${tile.price}`, m.x, m.y + th * 0.17, th * 0.2, tw * 0.36, BOARD_COLORS.subText);
@@ -554,7 +505,8 @@ export function createBoardRenderer(canvas) {
       ctx.font = `bold ${size}px ${FONT}`;
       const w = Math.min(ctx.measureText(name).width + size, tw * 0.9);
       const h = size * 1.5;
-      const y = c.y - (th / 2) * TILE_SCALE - h * 0.75;
+      // 立体棋子比原来的圆片高，名牌放到后排棋子的头顶之上
+      const y = c.y - th * 1.05;
       ctx.beginPath();
       ctx.roundRect(c.x - w / 2, y - h / 2, w, h, h / 2);
       ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
@@ -564,6 +516,81 @@ export function createBoardRenderer(canvas) {
       ctx.stroke();
       fitText(name, c.x, y, size, w - size * 0.6, BOARD_COLORS.text, 'bold');
     }
+  }
+
+  /**
+   * 立体小兵棋子：底座 + 收腰的身体 + 圆头，座位号写在头上。
+   * (x, y) 为落在格子上的点，z 为跳起高度（格高为单位），r 为基准半径。
+   */
+  function drawPawn(x, y, z, r, color, seat, current) {
+    const { th } = layout;
+    const lift = z * th;
+    const outline = '#2b1d10';
+
+    // 地面上的影子，不随跳起移动，跳得越高越小
+    const shrink = 1 / (1 + z * 2);
+    ctx.beginPath();
+    ctx.ellipse(x, y, r * 1.05 * shrink, r * 0.5 * shrink, 0, 0, Math.PI * 2);
+    ctx.fillStyle = BOARD_COLORS.shadow;
+    ctx.fill();
+
+    const by = y - lift;
+    const dark = shade(color, 0.72);
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = outline;
+    ctx.lineJoin = 'round';
+
+    // 底座：扁圆柱
+    ctx.beginPath();
+    ctx.ellipse(x, by - r * 0.12, r * 0.95, r * 0.42, 0, 0, Math.PI);
+    ctx.lineTo(x - r * 0.95, by - r * 0.32);
+    ctx.ellipse(x, by - r * 0.32, r * 0.95, r * 0.42, 0, Math.PI, 0, true);
+    ctx.closePath();
+    ctx.fillStyle = dark;
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(x, by - r * 0.32, r * 0.95, r * 0.42, 0, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.stroke();
+
+    // 身体：上窄下宽的梯形，左亮右暗
+    const top = by - r * 1.5;
+    polygon([
+      [x - r * 0.62, by - r * 0.34],
+      [x - r * 0.3, top],
+      [x + r * 0.3, top],
+      [x + r * 0.62, by - r * 0.34],
+    ]);
+    const body = ctx.createLinearGradient(x - r * 0.62, 0, x + r * 0.62, 0);
+    body.addColorStop(0, shade(color, 1.12));
+    body.addColorStop(1, dark);
+    ctx.fillStyle = body;
+    ctx.fill();
+    ctx.stroke();
+
+    // 头：圆，座位号写在上面（颜色之外的第二种区分方式，名字首字可能相同，如“小红”“小蓝”）
+    const hr = r * 0.78;
+    const hy = top - hr * 0.7;
+    if (current) {
+      ctx.beginPath();
+      ctx.arc(x, hy, hr + 3, 0, Math.PI * 2);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.strokeStyle = outline;
+      ctx.lineWidth = 1.2;
+    }
+    ctx.beginPath();
+    ctx.arc(x, hy, hr, 0, Math.PI * 2);
+    const head = ctx.createRadialGradient(x - hr * 0.35, hy - hr * 0.4, hr * 0.1, x, hy, hr);
+    head.addColorStop(0, shade(color, 1.25));
+    head.addColorStop(1, color);
+    ctx.fillStyle = head;
+    ctx.fill();
+    ctx.stroke();
+    fitText(String(seat), x, hy + hr * 0.04, hr * 1.25, hr * 1.5, '#1b1b1b', 'bold');
   }
 
   function drawTokens(state, tokens, currentPlayerId, board) {
@@ -585,28 +612,7 @@ export function createBoardRenderer(canvas) {
       .sort((a, b) => a.y - b.y);
 
     for (const { p, i, x, y, z } of items) {
-      ctx.beginPath();
-      ctx.ellipse(x, y, r, r * 0.5, 0, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
-      ctx.fill();
-
-      const cy = y - r * 0.7 - z * th;
-      if (p.id === currentPlayerId) {
-        ctx.beginPath();
-        ctx.arc(x, cy, r + 3, 0, Math.PI * 2);
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 3;
-        ctx.stroke();
-      }
-      ctx.beginPath();
-      ctx.arc(x, cy, r, 0, Math.PI * 2);
-      ctx.fillStyle = PLAYER_COLORS[i];
-      ctx.fill();
-      ctx.strokeStyle = '#1b1b1b';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      // 座位号，颜色之外的第二种区分方式（名字首字可能相同，如“小红”“小蓝”）
-      fitText(String(i + 1), x, cy, r * 1.2, r * 1.6, '#1b1b1b', 'bold');
+      drawPawn(x, y, z, r, PLAYER_COLORS[i], i + 1, p.id === currentPlayerId);
     }
     drawStackLabels(board, items);
   }
@@ -634,14 +640,14 @@ export function createBoardRenderer(canvas) {
    *   floaters?: object[],
    *   currentPlayerId?: string | null,
    *   focus?: { index: number, glow: number } | null,
-   *   card?: import('./tileCard.js').TileCard | null,
    *   effects?: Map<string, { kind: string, level?: number, t: number }>,
    *   viewing?: number | null,
-   *   cardLabel?: string | null,
-   *   compactCard?: boolean,
+   *   maxLevel?: number,
+   *   popup?: { data: object, t: number, toast: boolean } | null,
+   *   reducedMotion?: boolean,
    *   view?: { scale: number, ox: number, oy: number },
-   * }} scene focus 为落点高亮；card 为中央显示的地产卡片，cardLabel 为卡片角标；
-   *   effects 为格子特效；viewing 为玩家正在查看的格子
+   * }} scene focus 为落点高亮；effects 为格子特效；viewing 为玩家正在查看的格子；
+   *   maxLevel 为地产最高等级（满级时中央显示地标）
    */
   function draw({
     board,
@@ -651,12 +657,12 @@ export function createBoardRenderer(canvas) {
     floaters = [],
     currentPlayerId = null,
     focus = null,
-    card = null,
     effects: tileEffects = new Map(),
     viewing = null,
-    cardLabel = null,
-    compactCard = false,
+    maxLevel = 4,
     view = { scale: 1, ox: 0, oy: 0 },
+    popup = null,
+    reducedMotion = false,
   }) {
     effects = tileEffects;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -666,7 +672,7 @@ export function createBoardRenderer(canvas) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    drawCenter(state, dice);
+    drawCenter();
     // 从远到近画，近处格子的侧面盖住远处
     const depthOf = (t) => {
       const { gx, gy } = gridOf(t.index);
@@ -674,12 +680,29 @@ export function createBoardRenderer(canvas) {
     };
     const ordered = [...board.tiles].sort((a, b) => depthOf(a) - depthOf(b));
     drawShadows(ordered);
-    for (const tile of ordered) drawTile(tile, state);
+    // 外圈格子和中央城市地块合在一起按远近画，楼房和格子互相遮挡才正确
+    lots ??= cityLots(board);
+    const scene = [
+      ...ordered.map((tile) => ({ depth: depthOf(tile), draw: () => drawTile(tile, state) })),
+      ...(state ? lots.map((lot) => ({ depth: lot.gx + lot.gy, draw: () => city.drawLot(lot, state, maxLevel, effects) })) : []),
+    ].sort((a, b) => a.depth - b.depth);
+    names = [];
+    for (const item of scene) item.draw();
+    drawNames();
     if (focus && focus.glow > 0) drawHighlight(focus.index, focus.glow);
     if (viewing !== null) drawViewOutline(viewing);
-    if (card) drawCard(card, cardLabel, compactCard);
+    drawCenterLabels(state, dice);
     if (state && tokens) drawTokens(state, tokens, currentPlayerId, board);
     for (const f of floaters) drawFloater(f);
+
+    // 结果卡在屏幕坐标里画，不随棋盘缩放，字号固定
+    if (popup) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      drawPopup(ctx, { width: cssWidth, height: cssHeight }, popup.data, { ...popup, reducedMotion }, (shape, x, y, owner, size) => {
+        const th = size / 1.1;
+        createCityPainter(ctx, { tw: th * 2, th }, () => ({ x, y })).drawShape(shape, x, y, owner);
+      });
+    }
   }
 
   return {

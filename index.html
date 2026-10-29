@@ -56,8 +56,14 @@
           <div id="assets"></div>
         </section>
 
-        <section aria-labelledby="log-title">
-          <h2 id="log-title">事件</h2>
+        <section aria-labelledby="log-title" class="log-section">
+          <!-- 按钮放在标题旁：展开后列表再长，也不会把按钮推到首屏外 -->
+          <div class="log-head">
+            <h2 id="log-title">事件</h2>
+            <button id="log-toggle" type="button" class="btn btn-ghost log-toggle" aria-controls="log" aria-expanded="false" hidden>
+              展开全部记录
+            </button>
+          </div>
           <ol id="log" class="log" aria-live="polite" aria-relevant="additions"></ol>
         </section>
 
