@@ -3,7 +3,7 @@
  * 只读状态来渲染；按钮点击通过 onAction 交给 main.js 调用逻辑层。
  */
 import { el } from './dom.js';
-import { money } from './format.js';
+import { money, tradeSideText } from './format.js';
 import { PLAYER_COLORS, GROUP_COLORS } from '../render/theme.js';
 
 /**
@@ -20,9 +20,10 @@ const ALWAYS_ENABLED = new Set(['rematch', 'newGame']);
  *   actions: HTMLElement,
  *   assets: HTMLElement,
  *   onAction: (action: Action) => void,
+ *   maxTradesPerTurn: number,
  * }} roots
  */
-export function createPanel({ players, status, actions, assets, onAction }) {
+export function createPanel({ players, status, actions, assets, onAction, maxTradesPerTurn }) {
   const button = (action, disabled) =>
     el('button', {
       type: 'button',
@@ -76,7 +77,12 @@ export function createPanel({ players, status, actions, assets, onAction }) {
       case 'awaitRoll':
         return player.inJail
           ? `${player.name} 在监狱中（第 ${player.jailTurns + 1} 回合）：掷出双数可出狱，也可以交保释金或用出狱卡`
-          : `轮到 ${player.name}，请掷骰`;
+          : `轮到 ${player.name}，请掷骰。掷骰前可以和其他玩家交易地产`;
+      case 'awaitTrade': {
+        const t = state.pendingTrade;
+        const name = (id) => state.players.find((p) => p.id === id)?.name;
+        return `${name(t.fromId)} 想用「${tradeSideText(t.give, board)}」换 ${name(t.toId)} 的「${tradeSideText(t.take, board)}」。${name(t.toId)} 要接受吗？`;
+      }
       case 'awaitDecision': {
         const tile = board.getTile(player.position);
         return `${tile.name} 无人拥有，售价 ${money(tile.price)}。${player.name} 现有 ${money(player.cash)}，要买吗？`;
@@ -107,7 +113,16 @@ export function createPanel({ players, status, actions, assets, onAction }) {
           { kind: 'roll', label: player.inJail ? '掷骰（求双数出狱）' : '掷骰', primary: true },
           player.inJail && { kind: 'bail', label: '交保释金' },
           player.inJail && player.jailFreeCards.length > 0 && { kind: 'jailCard', label: '用出狱卡' },
+          state.tradesThisTurn < maxTradesPerTurn && {
+            kind: 'openTrade',
+            label: `交易（本回合还可 ${maxTradesPerTurn - state.tradesThisTurn} 次）`,
+          },
         ].filter(Boolean);
+      case 'awaitTrade':
+        return [
+          { kind: 'acceptTrade', label: '接受交易', primary: true },
+          { kind: 'rejectTrade', label: '拒绝' },
+        ];
       case 'awaitDecision':
         return [
           { kind: 'buy', label: '买下', primary: true },

@@ -397,3 +397,72 @@ select:focus-visible {
     scroll-behavior: auto !important;
   }
 }
+
+/* ---------- 交易 ---------- */
+
+.trade-dialog {
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 16px;
+  border: 1px solid #5b6680;
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.trade-dialog::backdrop {
+  background: rgb(0 0 0 / 0.55);
+}
+
+.trade-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.trade-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.trade-side {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid #5b6680;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.trade-props {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.trade-prop {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.trade-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trade-field input,
+.trade-field select {
+  font: inherit;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #5b6680;
+  background: var(--panel-2);
+  color: var(--text);
+}

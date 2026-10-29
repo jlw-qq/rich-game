@@ -1,6 +1,6 @@
 /**
  * 逻辑层：统一的操作描述 → 对局方法。UI 按钮和 AI 都通过这里执行操作。
- * action：{ kind, tileId? }。操作人一律取 game.actingPlayerId()，调用方不能替别人操作。
+ * action：{ kind, tileId?, trade? }。操作人一律取 game.actingPlayerId()，调用方不能替别人操作。
  */
 
 export const ACTION_KINDS = [
@@ -16,11 +16,14 @@ export const ACTION_KINDS = [
   'sell',
   'mortgage',
   'redeem',
+  'proposeTrade',
+  'acceptTrade',
+  'rejectTrade',
 ];
 
 /**
  * @param {object} game createGame 的返回值
- * @param {{ kind: string, tileId?: string }} action
+ * @param {{ kind: string, tileId?: string, trade?: object }} action
  * @returns {{ ok: boolean, error?: string }}
  */
 export function performAction(game, action) {
@@ -50,6 +53,12 @@ export function performAction(game, action) {
       return game.mortgage(me, action.tileId);
     case 'redeem':
       return game.redeem(me, action.tileId);
+    case 'proposeTrade':
+      return game.proposeTrade(me, action.trade);
+    case 'acceptTrade':
+      return game.acceptTrade();
+    case 'rejectTrade':
+      return game.rejectTrade();
     default:
       return { ok: false, error: `未知操作: ${action?.kind}` };
   }

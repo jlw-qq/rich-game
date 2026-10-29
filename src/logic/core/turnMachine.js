@@ -5,6 +5,8 @@
 
 export const PHASES = Object.freeze({
   AWAIT_ROLL: 'awaitRoll',
+  /** 当前玩家掷骰前发起了交易，等待对方接受或拒绝 */
+  AWAIT_TRADE: 'awaitTrade',
   MOVING: 'moving',
   TILE_EVENT: 'tileEvent',
   AWAIT_DECISION: 'awaitDecision',
@@ -20,7 +22,9 @@ const P = PHASES;
 /** 正常流程允许的跳转。turnEnd 只能通过 endTurn 离开，gameOver 是终态 */
 const TRANSITIONS = Object.freeze({
   // awaitRoll → awaitPayment：坐满回合被强制保释但现金不足
-  [P.AWAIT_ROLL]: [P.MOVING, P.AWAIT_PAYMENT],
+  [P.AWAIT_ROLL]: [P.MOVING, P.AWAIT_PAYMENT, P.AWAIT_TRADE],
+  // 对方答复后回到掷骰前
+  [P.AWAIT_TRADE]: [P.AWAIT_ROLL],
   [P.MOVING]: [P.TILE_EVENT],
   // tileEvent → moving：卡牌让玩家再次移动
   [P.TILE_EVENT]: [P.AWAIT_DECISION, P.AWAIT_PAYMENT, P.SETTLE, P.MOVING],

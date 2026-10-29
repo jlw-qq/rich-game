@@ -18,6 +18,7 @@ import {
 import { charge, liquidateForBankruptcy, payPendingDebt } from '../systems/bankruptcy.js';
 import { applyCard, drawCard } from '../systems/cards.js';
 import { payBail, releaseFromJail, returnJailFreeCards, useJailFreeCard } from '../systems/jail.js';
+import { executeTrade, prepareTrade } from '../systems/trade.js';
 
 const fail = (error) => ({ ok: false, error });
 
@@ -59,9 +60,10 @@ export function createGame({ board, rules, state, bus, cards = [], rollDice = de
 
   const fsm = createTurnMachine(state, bus, { maxRounds: rules.maxRounds, pickWinner: pickRichest });
 
-  /** 当前有权操作的玩家：还款阶段是欠款人，其余是当前玩家 */
+  /** 当前有权操作的玩家：还款阶段是欠款人，交易阶段是被提议的一方，其余是当前玩家 */
   function actingPlayerId() {
     if (state.phase === P.AWAIT_PAYMENT) return state.pendingDebt?.debtorId ?? null;
+    if (state.phase === P.AWAIT_TRADE) return state.pendingTrade?.toId ?? null;
     return fsm.currentPlayer()?.id ?? null;
   }
 
@@ -256,6 +258,47 @@ export function createGame({ board, rules, state, bus, cards = [], rollDice = de
     return fsm.declareBankrupt(debt.debtorId);
   }
 
+  /**
+   * 当前玩家掷骰前向别人提议交易。
+   * @param {string} playerId 发起人，必须是当前玩家
+   * @param {{ toId: string, give?: object, take?: object }} offer
+   */
+  function proposeTrade(playerId, offer) {
+    if (state.phase !== P.AWAIT_ROLL) return fail(`当前阶段不能发起交易: ${state.phase}`);
+    if (playerId !== fsm.currentPlayer()?.id) return fail('只能在自己的回合发起交易');
+    if (state.tradesThisTurn >= rules.maxTradesPerTurn) return fail(`每回合最多发起 ${rules.maxTradesPerTurn} 次交易`);
+    const checked = prepareTrade(ctx, { ...offer, fromId: playerId });
+    if (!checked.ok) return checked;
+
+    state.pendingTrade = checked.trade;
+    state.tradesThisTurn += 1;
+    fsm.transition(P.AWAIT_TRADE);
+    bus.emit('tradeProposed', { trade: checked.trade });
+    return { ok: true };
+  }
+
+  /**
+   * 被提议的一方接受交易。交易阶段不允许其他操作，双方资产不会变化；
+   * 万一交易已失效（如存档被改过），返回失败且状态不变，对方仍可拒绝。
+   */
+  function acceptTrade() {
+    if (state.phase !== P.AWAIT_TRADE) return fail(`当前阶段没有待答复的交易: ${state.phase}`);
+    const result = executeTrade(ctx, state.pendingTrade);
+    if (!result.ok) return result;
+    state.pendingTrade = null;
+    fsm.transition(P.AWAIT_ROLL);
+    return result;
+  }
+
+  function rejectTrade() {
+    if (state.phase !== P.AWAIT_TRADE) return fail(`当前阶段没有待答复的交易: ${state.phase}`);
+    const trade = state.pendingTrade;
+    state.pendingTrade = null;
+    bus.emit('tradeRejected', { trade });
+    fsm.transition(P.AWAIT_ROLL);
+    return { ok: true };
+  }
+
   /** 结束回合：掷出双数且仍可行动则同一玩家再掷，否则换下一位 */
   function endTurn() {
     if (state.phase !== P.TURN_END) return fail(`当前阶段不能结束回合: ${state.phase}`);
@@ -264,6 +307,7 @@ export function createGame({ board, rules, state, bus, cards = [], rollDice = de
       return fsm.grantExtraRoll();
     }
     state.doublesCount = 0;
+    state.tradesThisTurn = 0;
     return fsm.endTurn();
   }
 
@@ -286,6 +330,9 @@ export function createGame({ board, rules, state, bus, cards = [], rollDice = de
     useJailFreeCard: jailAction(useJailFreeCard),
     payDebt,
     declareBankruptcy,
+    proposeTrade,
+    acceptTrade,
+    rejectTrade,
     endTurn,
   };
 }

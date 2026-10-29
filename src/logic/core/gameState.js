@@ -5,7 +5,8 @@ import { PHASES } from './turnMachine.js';
 import { createRng } from '../utils/rng.js';
 import { buildDecks, validateCards } from '../systems/cards.js';
 
-export const STATE_VERSION = 1;
+/** 版本 2：新增交易（pendingTrade、tradesThisTurn） */
+export const STATE_VERSION = 2;
 export const MAX_NAME_LENGTH = 12;
 /** AI 难度 */
 export const AI_LEVELS = ['easy', 'normal'];
@@ -102,6 +103,10 @@ export function createInitialState({ board, rules, players, seed, cards = [] }) 
     ),
     /** 未付清的欠款：{ debtorId, creditorId（null 表示银行）, amount, reason } */
     pendingDebt: null,
+    /** 等待答复的交易：{ fromId, toId, give, take }，见 systems/trade.js */
+    pendingTrade: null,
+    /** 当前玩家本回合已发起的交易次数，换人时清零 */
+    tradesThisTurn: 0,
     /** 牌堆：卡牌 id 数组，从头抽 */
     decks,
     rngState: rng.getState(),
@@ -111,4 +116,16 @@ export function createInitialState({ board, rules, players, seed, cards = [] }) 
     /** 终局原因：'bankruptcy' | 'roundLimit' */
     endReason: null,
   };
+}
+
+/**
+ * 把旧版本的对局数据升级到当前版本。返回新对象，不修改参数；无法识别的数据原样返回，交给校验器拒绝。
+ * @param {unknown} state
+ */
+export function migrateState(state) {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return state;
+  if (state.version === 1) {
+    return { ...state, version: 2, pendingTrade: null, tradesThisTurn: 0 };
+  }
+  return state;
 }

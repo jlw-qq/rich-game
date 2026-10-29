@@ -4,6 +4,7 @@
 import { parseSave, serializeSave } from '../../data/save/saveFormat.js';
 import { PHASES } from './turnMachine.js';
 import { validateState } from './stateValidator.js';
+import { migrateState } from './gameState.js';
 
 /**
  * 只能在“稳定”阶段存档：等待玩家操作的阶段。
@@ -11,6 +12,7 @@ import { validateState } from './stateValidator.js';
  */
 export const SAVABLE_PHASES = [
   PHASES.AWAIT_ROLL,
+  PHASES.AWAIT_TRADE,
   PHASES.AWAIT_DECISION,
   PHASES.AWAIT_PAYMENT,
   PHASES.TURN_END,
@@ -44,8 +46,10 @@ export function importSave(text, ctx) {
  * @param {{ board: object, rules: object, cards: object[] }} ctx
  */
 export function checkLoadedState(parsed, ctx) {
-  const errors = validateState(parsed.state, ctx);
-  if (!SAVABLE_PHASES.includes(parsed.state?.phase)) errors.push(`存档停在中间阶段: ${parsed.state?.phase}`);
+  // 旧版存档先升级再校验
+  const state = migrateState(parsed.state);
+  const errors = validateState(state, ctx);
+  if (!SAVABLE_PHASES.includes(state?.phase)) errors.push(`存档停在中间阶段: ${state?.phase}`);
   if (errors.length > 0) return { ok: false, error: '存档内容无效', details: errors };
-  return { ok: true, state: structuredClone(parsed.state), savedAt: parsed.savedAt };
+  return { ok: true, state: structuredClone(state), savedAt: parsed.savedAt };
 }

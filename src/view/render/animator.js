@@ -23,6 +23,10 @@ const CASH_DELTAS = {
   propertyRedeemed: (p) => [[p.playerId, -p.cost]],
   buildingSold: (p) => [[p.playerId, p.refund]],
   propertyMortgaged: (p) => [[p.playerId, p.amount]],
+  tradeAccepted: ({ trade: t }) => [
+    [t.fromId, t.take.cash - t.give.cash],
+    [t.toId, t.give.cash - t.take.cash],
+  ],
   paymentMade: (p) => {
     const share = p.payeeIds.length > 0 ? Math.floor(p.amount / p.payeeIds.length) : 0;
     return [[p.payerId, -p.amount], ...p.payeeIds.map((id) => [id, share])];
@@ -46,8 +50,10 @@ export function createAnimator({ state, reducedMotion = false, onEvent = () => {
   let floaters = [];
   let lastNow = 0;
   let pendingIdle = false;
+  /** 播放倍速：动画时长除以该值 */
+  let speed = 1;
 
-  const duration = (ms) => (reducedMotion ? 0 : ms);
+  const duration = (ms) => (reducedMotion ? 0 : ms / speed);
 
   /** 事件总线监听器，签名与 bus.on 一致 */
   function handle(payload, type) {
@@ -155,6 +161,10 @@ export function createAnimator({ state, reducedMotion = false, onEvent = () => {
     tick,
     tokens,
     dice,
+    /** @param {number} value 播放倍速，正数；只影响之后开始的动画 */
+    setSpeed(value) {
+      if (Number.isFinite(value) && value > 0) speed = value;
+    },
     /** 是否还有事件在播放或排队 */
     get busy() {
       return current !== null || queue.length > 0;

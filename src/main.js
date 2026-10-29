@@ -26,6 +26,7 @@ import { createLog } from './view/ui/log.js';
 import { createPanel } from './view/ui/panel.js';
 import { createResults } from './view/ui/results.js';
 import { createSetup } from './view/ui/setup.js';
+import { createTradeDialog } from './view/ui/trade.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -53,6 +54,7 @@ const EVENT_SOUNDS = {
   diceRolled: 'dice',
   propertyBought: 'buy',
   propertyUpgraded: 'buy',
+  tradeAccepted: 'buy',
   passedStart: 'coin',
   cashGained: 'coin',
   paymentMade: 'pay',
@@ -61,10 +63,24 @@ const EVENT_SOUNDS = {
   gameOver: 'win',
 };
 /** 需要醒目显示的日志 */
-const HIGHLIGHT_EVENTS = new Set(['turnStarted', 'playerBankrupt', 'gameOver', 'debtPending']);
+const HIGHLIGHT_EVENTS = new Set(['turnStarted', 'playerBankrupt', 'gameOver', 'debtPending', 'tradeProposed']);
 
-/** AI 每步操作之间的间隔（毫秒） */
+/** AI 每步操作之间的间隔（毫秒），按播放倍速缩短 */
 const AI_DELAY_MS = 600;
+/** 可选的播放倍速，点击按钮依次切换 */
+const SPEEDS = [1, 2, 4];
+const SPEED_KEY = 'rich-game:speed';
+
+/** 播放倍速只是本机偏好，读写失败时用 1× */
+function loadSpeed() {
+  try {
+    const v = Number(getStorage()?.getItem(SPEED_KEY));
+    return SPEEDS.includes(v) ? v : 1;
+  } catch {
+    return 1;
+  }
+}
+let speed = loadSpeed();
 
 /** 当前对局，开局前为 null */
 let session = null;
@@ -130,7 +146,7 @@ function scheduleAi() {
     if (r?.fallback) console.warn('AI 改用兜底操作：', r.error);
     if (current.animator.busy) requestFrame();
     else renderPanel();
-  }, reducedMotion.matches ? AI_DELAY_MS / 3 : AI_DELAY_MS);
+  }, (reducedMotion.matches ? AI_DELAY_MS / 3 : AI_DELAY_MS) / speed);
 }
 
 /** 用一份状态（新开局或读档）建立对局 */
@@ -152,6 +168,7 @@ function startSession(state, intro) {
     onChange: requestFrame,
     onIdle: renderPanel,
   });
+  animator.setSpeed(speed);
   bus.on('*', animator.handle);
   const driver = createAiDriver({ game, state, board, rules: RULES });
 
@@ -191,6 +208,7 @@ function playerSetupOf(state) {
 
 function leaveToSetup(options) {
   if (session?.aiTimer) clearTimeout(session.aiTimer);
+  tradeDialog.close();
   session = null;
   results.hide();
   $('game').hidden = true;
@@ -210,7 +228,8 @@ function downloadSave() {
   a.href = url;
   a.download = `rich-game-${stamp}.json`;
   a.click();
-  URL.revokeObjectURL(url);
+  // 部分浏览器在 click 返回后才开始下载，立即释放会导致下载失败
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
   log.add('已导出存档文件');
 }
 
@@ -232,17 +251,24 @@ async function importFile(file) {
   return null;
 }
 
-/** 按钮 → 逻辑层操作 */
+/**
+ * 按钮 → 逻辑层操作。
+ * @returns {{ ok: boolean, error?: string } | undefined} 逻辑层操作的结果；非逻辑层操作返回 undefined
+ */
 function dispatch(action) {
   if (action.kind === 'newGame') return leaveToSetup();
   if (action.kind === 'rematch') return session && startGame(playerSetupOf(session.state));
   // 动画播放中或 AI 回合，忽略人类操作
-  if (!session || session.animator.busy || session.driver.isAiTurn()) return;
+  if (!session || session.animator.busy || session.driver.isAiTurn()) return { ok: false, error: '现在不能操作' };
+  if (action.kind === 'openTrade') {
+    tradeDialog.open({ state: session.state, board, playerId: session.game.actingPlayerId() });
+    return;
+  }
   const result = performAction(session.game, action);
   if (!result.ok) {
     log.add(result.error, 'error');
     sound.play('error');
-    return;
+    return result;
   }
   if (session.animator.busy) {
     panel.setBusy(true);
@@ -251,7 +277,16 @@ function dispatch(action) {
     renderPanel();
   }
   requestFrame();
+  return result;
 }
+
+const tradeDialog = createTradeDialog({
+  root: /** @type {HTMLDialogElement} */ ($('trade')),
+  onSubmit: (trade) => {
+    const r = dispatch({ kind: 'proposeTrade', trade });
+    return r?.ok ? null : (r?.error ?? '现在不能交易');
+  },
+});
 
 const panel = createPanel({
   players: $('players'),
@@ -259,6 +294,7 @@ const panel = createPanel({
   actions: $('actions'),
   assets: $('assets'),
   onAction: dispatch,
+  maxTradesPerTurn: RULES.maxTradesPerTurn,
 });
 
 const setup = createSetup({
@@ -298,7 +334,7 @@ function showSetup({ message = '' } = {}) {
 
 function resize() {
   const rect = canvas.parentElement.getBoundingClientRect();
-  // 画布宽度跟随容器，高宽比固定为 5:8，正好放下等距棋盘
+  // 画布宽度跟随容器，高度固定为宽度的 0.62 倍，正好放下等距棋盘
   const width = Math.floor(rect.width);
   renderer.resize(width, Math.floor(width * 0.62));
   canvas.style.width = `${width}px`;
@@ -314,6 +350,22 @@ muteButton.addEventListener('click', () => {
   muteButton.setAttribute('aria-pressed', String(!sound.muted));
   muteButton.textContent = sound.muted ? '🔇 声音：关' : '🔊 声音：开';
 });
+const speedButton = $('speed');
+function renderSpeed() {
+  speedButton.textContent = `⏩ 速度：${speed}×`;
+}
+speedButton.addEventListener('click', () => {
+  speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
+  session?.animator.setSpeed(speed);
+  renderSpeed();
+  try {
+    getStorage()?.setItem(SPEED_KEY, String(speed));
+  } catch {
+    // 存不下只影响下次打开时的默认值
+  }
+});
+renderSpeed();
+
 $('export').addEventListener('click', downloadSave);
 $('quit').addEventListener('click', () => leaveToSetup());
 

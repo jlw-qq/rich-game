@@ -4,7 +4,8 @@
  * 防死循环：
  * - 决策抛错、返回非法操作、或操作执行后状态没有任何变化，都改用兜底操作；
  * - 同一回合内的步数超过 maxStepsPerTurn 后，不再询问策略，直接用兜底操作；
- * - 兜底操作每一步都必然推进状态（掷骰、放弃购买、付款或破产、结束回合）。
+ * - 兜底操作每一步都必然推进状态（掷骰、拒绝交易、放弃购买、付款或破产、结束回合）；
+ * - 每回合发起交易的次数有上限（rules.maxTradesPerTurn），AI 之间互相提议也不会无限进行。
  */
 import { PHASES as P } from '../core/turnMachine.js';
 import { performAction } from '../core/actions.js';
@@ -17,7 +18,8 @@ export const DEFAULT_MAX_STEPS_PER_TURN = 100;
 function signature(state) {
   const players = state.players.map((p) => `${p.cash},${p.position},${p.bankrupt ? 1 : 0},${p.inJail ? 1 : 0},${p.jailFreeCards.length}`);
   const props = Object.values(state.properties).map((p) => `${p.ownerId ?? '-'}${p.level}${p.mortgaged ? 'm' : ''}`);
-  return [state.phase, state.turn, state.currentPlayerIndex, state.doublesCount, players.join('|'), props.join('')].join('#');
+  const trade = state.pendingTrade ? JSON.stringify(state.pendingTrade) : '-';
+  return [state.phase, state.turn, state.currentPlayerIndex, state.doublesCount, state.tradesThisTurn, trade, players.join('|'), props.join('')].join('#');
 }
 
 /**
@@ -67,6 +69,8 @@ export function createAiDriver({
     switch (state.phase) {
       case P.AWAIT_ROLL:
         return game.rollDice();
+      case P.AWAIT_TRADE:
+        return game.rejectTrade();
       case P.AWAIT_DECISION:
         return game.declineProperty();
       case P.AWAIT_PAYMENT: {

@@ -4,6 +4,7 @@
  */
 import { PHASES } from './turnMachine.js';
 import { AI_LEVELS, MAX_NAME_LENGTH, STATE_VERSION } from './gameState.js';
+import { prepareTrade } from '../systems/trade.js';
 
 const isInt = (v) => Number.isInteger(v);
 const isNonNegInt = (v) => isInt(v) && v >= 0;
@@ -113,6 +114,22 @@ export function validateState(state, { board, rules, cards }) {
     }
   } else if (debt !== null) {
     err('非还款阶段存在欠款');
+  }
+
+  // ---- 交易
+  if (!(isNonNegInt(state.tradesThisTurn) && state.tradesThisTurn <= rules.maxTradesPerTurn)) err('tradesThisTurn 越界');
+  const trade = state.pendingTrade;
+  if (state.phase === PHASES.AWAIT_TRADE) {
+    const current = isInt(idx) ? players[idx] : null;
+    if (!isPlainObject(trade)) err('交易阶段缺少交易数据');
+    else if (trade.fromId !== current?.id) err('交易发起人不是当前玩家');
+    else if (errors.length === 0) {
+      // 地产、玩家数据都合法后，再按交易规则复核（引用的资产必须仍然存在且可交易）
+      const checked = prepareTrade({ state, board }, trade);
+      if (!checked.ok) err(`交易数据无效：${checked.error}`);
+    }
+  } else if (trade !== null) {
+    err('非交易阶段存在待答复的交易');
   }
 
   // ---- 终局

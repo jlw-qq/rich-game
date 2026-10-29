@@ -7,6 +7,20 @@ export const money = (n) => `${n.toLocaleString('zh-CN')} 元`;
 
 const DECK_NAMES = { chance: '机会', fate: '命运' };
 
+/**
+ * 交易一边的内容，如“西宁、银川、500 元、出狱卡 ×1”
+ * @param {{ properties: string[], cash: number, jailCards: number }} side
+ * @param {{ tiles: readonly object[] }} board
+ */
+export function tradeSideText(side, board) {
+  const parts = [
+    ...side.properties.map((id) => board.tiles.find((t) => t.id === id)?.name ?? id),
+    side.cash > 0 && money(side.cash),
+    side.jailCards > 0 && `出狱卡 ×${side.jailCards}`,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join('、') : '什么都不给';
+}
+
 const RELEASE_TEXT = {
   bail: '交保释金出狱',
   card: '使用出狱卡出狱',
@@ -87,6 +101,14 @@ export function formatEvent(type, p, { state, board, cards }) {
       return `${name(p.playerId)} 抵押 ${tileName(p.tileId)}，得到 ${money(p.amount)}`;
     case 'propertyRedeemed':
       return `${name(p.playerId)} 赎回 ${tileName(p.tileId)}，花费 ${money(p.cost)}`;
+    case 'tradeProposed': {
+      const t = p.trade;
+      return `${name(t.fromId)} 向 ${name(t.toId)} 提议交易：拿出 ${tradeSideText(t.give, board)}，换取 ${tradeSideText(t.take, board)}`;
+    }
+    case 'tradeAccepted':
+      return `${name(p.trade.toId)} 接受了交易`;
+    case 'tradeRejected':
+      return `${name(p.trade.toId)} 拒绝了交易`;
     case 'playerBankrupt':
       return `${name(p.playerId)} 破产了`;
     case 'assetsLiquidated':

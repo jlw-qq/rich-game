@@ -23,4 +23,6 @@ export const RULES = {
   maxConsecutiveDoubles: 3,
   /** 回合上限（轮数）。超过后按总资产排名决出胜者 */
   maxRounds: 100,
+  /** 每回合最多发起的交易次数，防止反复提议拖住对局 */
+  maxTradesPerTurn: 3,
 };

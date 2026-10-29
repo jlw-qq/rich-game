@@ -26,6 +26,7 @@ export function validateRules(rules) {
     'maxConsecutiveDoubles',
     'groupRentMultiplier',
     'maxRounds',
+    'maxTradesPerTurn',
   ];
   for (const key of intKeys) {
     if (!isPositiveInt(rules[key])) errors.push(`rules.${key} 必须是正整数，实际为 ${rules[key]}`);

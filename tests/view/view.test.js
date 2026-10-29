@@ -11,7 +11,7 @@ import { createInitialState } from '../../src/logic/core/gameState.js';
 import { createGame } from '../../src/logic/core/game.js';
 import { PHASES as P } from '../../src/logic/core/turnMachine.js';
 import { computeLayout, gridOf, project, SIDE } from '../../src/view/render/layout.js';
-import { formatEvent } from '../../src/view/ui/format.js';
+import { formatEvent, tradeSideText } from '../../src/view/ui/format.js';
 import { createAnimator } from '../../src/view/render/animator.js';
 
 const board = createBoard({ tiles: TILES, groups: GROUPS, rules: RULES });
@@ -151,5 +151,38 @@ describe('animator', () => {
     expect(animator.floaters.map((f) => f.text)).toEqual(['−40', '+40']);
     animator.tick(5000);
     expect(animator.floaters).toEqual([]);
+  });
+});
+
+describe('交易文字', () => {
+  it('一边的内容按地产、现金、出狱卡列出；空的一边写明', () => {
+    expect(tradeSideText({ properties: ['xining', 'beijing'], cash: 1500, jailCards: 1 }, board)).toBe('西宁、北京、1,500 元、出狱卡 ×1');
+    expect(tradeSideText({ properties: [], cash: 0, jailCards: 0 }, board)).toBe('什么都不给');
+  });
+
+  it('提议、接受、拒绝都有日志', () => {
+    const state = createInitialState({ board, rules: RULES, players: [{ name: '甲' }, { name: '乙' }], seed: 1 });
+    const trade = { fromId: 'p1', toId: 'p2', give: { properties: [], cash: 100, jailCards: 0 }, take: { properties: ['xining'], cash: 0, jailCards: 0 } };
+    const ctx = { state, board, cards: CARDS };
+    expect(formatEvent('tradeProposed', { trade }, ctx)).toBe('甲 向 乙 提议交易：拿出 100 元，换取 西宁');
+    expect(formatEvent('tradeAccepted', { trade }, ctx)).toBe('乙 接受了交易');
+    expect(formatEvent('tradeRejected', { trade }, ctx)).toBe('乙 拒绝了交易');
+  });
+});
+
+describe('播放倍速', () => {
+  const state = { players: [{ id: 'p1', position: 0 }] };
+
+  it('4× 时骰子动画用 1/4 的时间播完；非法倍速被忽略', () => {
+    const animator = createAnimator({ state });
+    animator.setSpeed(4);
+    animator.setSpeed(0);
+    animator.setSpeed(NaN);
+    animator.handle({ playerId: 'p1', dice: [2, 3], total: 5, isDouble: false }, 'diceRolled');
+    animator.tick(0);
+    animator.tick(149);
+    expect(animator.busy).toBe(true);
+    animator.tick(150); // 600 / 4
+    expect(animator.busy).toBe(false);
   });
 });
