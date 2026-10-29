@@ -13,10 +13,19 @@
 
     <main id="game" class="game" hidden>
       <div class="board-wrap">
-        <canvas id="board" role="img" aria-label="大富翁棋盘，玩家位置与地产信息见右侧面板和事件日志"></canvas>
+        <canvas
+          id="board"
+          role="img"
+          tabindex="0"
+          aria-label="大富翁棋盘。选中后用左右方向键逐格查看地产，Esc 取消；玩家位置见右侧面板和事件日志"
+          aria-describedby="tile-readout"
+        ></canvas>
+        <p id="tile-readout" class="visually-hidden" aria-live="polite"></p>
       </div>
 
       <aside class="side">
+        <section id="tile-card" class="tile-card" aria-label="地产详情" hidden></section>
+
         <section aria-labelledby="players-title">
           <h2 id="players-title">玩家</h2>
           <ul id="players" class="players"></ul>

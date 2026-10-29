@@ -10,9 +10,9 @@ import { createEventBus } from '../../src/logic/core/eventBus.js';
 import { createInitialState } from '../../src/logic/core/gameState.js';
 import { createGame } from '../../src/logic/core/game.js';
 import { PHASES as P } from '../../src/logic/core/turnMachine.js';
-import { computeLayout, gridOf, project, SIDE } from '../../src/view/render/layout.js';
+import { computeLayout, gridOf, outwardOf, project, SIDE } from '../../src/view/render/layout.js';
 import { formatEvent, tradeSideText } from '../../src/view/ui/format.js';
-import { createAnimator } from '../../src/view/render/animator.js';
+import { createAnimator, easeInOut, LAND_PAUSE_MS } from '../../src/view/render/animator.js';
 
 const board = createBoard({ tiles: TILES, groups: GROUPS, rules: RULES });
 
@@ -135,13 +135,17 @@ describe('animator', () => {
     expect(onIdle).toHaveBeenCalledTimes(1);
   });
 
-  it('减少动态效果时一帧播完', () => {
+  it('减少动态效果时棋子直接到终点，只保留落地停顿', () => {
     const { animator } = setup(true);
     animator.handle({ playerId: 'p1', from: 0, to: 3, steps: 3, path: [1, 2, 3] }, 'playerMoved');
     animator.handle({ playerId: 'p1', from: 3, to: 10 }, 'sentToJail');
     animator.tick(0);
-    expect(animator.busy).toBe(false);
+    expect(animator.tokens.get('p1')).toEqual({ ...gridOf(3), z: 0 });
+    expect(animator.busy).toBe(true); // 停顿中
+    animator.tick(LAND_PAUSE_MS);
     expect(animator.tokens.get('p1')).toEqual({ ...gridOf(10), z: 0 });
+    animator.tick(LAND_PAUSE_MS * 2);
+    expect(animator.busy).toBe(false);
   });
 
   it('付款产生飘字，过期后消失', () => {
@@ -184,5 +188,80 @@ describe('播放倍速', () => {
     expect(animator.busy).toBe(true);
     animator.tick(150); // 600 / 4
     expect(animator.busy).toBe(false);
+  });
+});
+
+describe('组色带方向', () => {
+  it('非角格的朝外方向都远离棋盘中心，角格没有方向', () => {
+    for (const t of TILES) {
+      const out = outwardOf(t.index);
+      if (t.index % SIDE === 0) {
+        expect(out).toBeNull();
+        continue;
+      }
+      const { gx, gy } = gridOf(t.index);
+      const c = SIDE / 2;
+      const before = Math.hypot(gx - c, gy - c);
+      expect(Math.hypot(gx + out[0] - c, gy + out[1] - c)).toBeGreaterThan(before);
+    }
+  });
+});
+
+describe('移动节奏', () => {
+  const state = { players: [{ id: 'p1', position: 0 }] };
+  const move = (n) => ({ playerId: 'p1', from: 0, to: n, steps: n, path: Array.from({ length: n }, (_, k) => k + 1) });
+  const STEP = 160;
+
+  it('缓动曲线：两端固定，t = 0.5 走一半，前四分之一比匀速慢', () => {
+    expect(easeInOut(0)).toBe(0);
+    expect(easeInOut(1)).toBe(1);
+    expect(easeInOut(0.5)).toBeCloseTo(0.5);
+    expect(easeInOut(0.25)).toBeLessThan(0.25);
+    expect(easeInOut(0.75)).toBeGreaterThan(0.75);
+  });
+
+  it('每格单独缓入缓出：一格的四分之一时间走不到四分之一，一半时间正好在两格中间且跳得最高', () => {
+    const a = createAnimator({ state });
+    a.handle(move(2), 'playerMoved');
+    a.tick(0);
+    const start = gridOf(0);
+    const next = gridOf(1);
+    const progress = () => (a.tokens.get('p1').gx - start.gx) / (next.gx - start.gx);
+    a.tick(STEP / 4);
+    expect(progress()).toBeLessThan(0.25);
+    a.tick(STEP / 2);
+    expect(progress()).toBeCloseTo(0.5);
+    expect(a.tokens.get('p1').z).toBeCloseTo(0.3);
+  });
+
+  it('落地后停顿，停顿结束前不播放后续事件', () => {
+    const onEvent = vi.fn();
+    const a = createAnimator({ state, onEvent });
+    a.handle(move(3), 'playerMoved');
+    a.handle({ playerId: 'p1', tileId: 'yinchuan', price: 600 }, 'propertyBought');
+    a.tick(0);
+    a.tick(3 * STEP); // 刚落地
+    expect(a.focus?.index).toBe(3); // 落点立即高亮
+    a.tick(3 * STEP + LAND_PAUSE_MS - 1);
+    expect(onEvent.mock.calls.map((c) => c[0])).toEqual(['playerMoved']);
+    a.tick(3 * STEP + LAND_PAUSE_MS);
+    expect(onEvent.mock.calls.map((c) => c[0])).toEqual(['playerMoved', 'propertyBought']);
+  });
+
+  it('长路径总时长不超过 2.4 秒；4× 速度时移动和停顿都缩短到 1/4', () => {
+    const doneAt = (speed, n) => {
+      const a = createAnimator({ state });
+      a.setSpeed(speed);
+      a.handle(move(n), 'playerMoved');
+      a.tick(0);
+      for (let t = 1; t < 10000; t++) {
+        a.tick(t);
+        if (!a.busy) return t;
+      }
+      return Infinity;
+    };
+    expect(doneAt(1, 39)).toBe(2400 + LAND_PAUSE_MS);
+    expect(doneAt(1, 5)).toBe(5 * STEP + LAND_PAUSE_MS);
+    expect(doneAt(4, 5)).toBe((5 * STEP + LAND_PAUSE_MS) / 4);
   });
 });

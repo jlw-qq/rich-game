@@ -20,6 +20,7 @@ import { PHASES } from './logic/core/turnMachine.js';
 import { createAiDriver } from './logic/ai/driver.js';
 import { createBoardRenderer } from './view/render/boardRenderer.js';
 import { createAnimator } from './view/render/animator.js';
+import { tileCardInfo } from './view/render/tileCard.js';
 import { createSound } from './view/audio/sound.js';
 import { formatEvent } from './view/ui/format.js';
 import { createLog } from './view/ui/log.js';
@@ -27,6 +28,9 @@ import { createPanel } from './view/ui/panel.js';
 import { createResults } from './view/ui/results.js';
 import { createSetup } from './view/ui/setup.js';
 import { createTradeDialog } from './view/ui/trade.js';
+import { bindBoardPicker, createSelection } from './view/ui/boardPicker.js';
+import { money } from './view/ui/format.js';
+import { createCardPanel } from './view/ui/cardPanel.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -82,6 +86,16 @@ function loadSpeed() {
 }
 let speed = loadSpeed();
 
+/** 玩家正在查看的格子（悬停、点选、键盘） */
+const selection = createSelection(board.size);
+/** 上一次看到的落地次数；有新落点时取消固定查看，让玩家先看到“走到哪儿” */
+let seenLandings = 0;
+/** 棋盘画布窄于该宽度（CSS 像素）时，棋盘上的卡片只显示城市名，详细信息放到侧栏 */
+const COMPACT_CARD_WIDTH = 600;
+const cardPanel = createCardPanel($('tile-card'));
+/** 读屏文字只在内容变化时更新，避免重复朗读 */
+let lastReadout = '';
+
 /** 当前对局，开局前为 null */
 let session = null;
 let frameRequested = false;
@@ -98,15 +112,54 @@ function frame(now) {
   frameRequested = false;
   const animator = session?.animator;
   const needMore = animator ? animator.tick(now) : false;
+  const focus = animator?.focus ?? null;
+  if (animator && animator.landings !== seenLandings) {
+    seenLandings = animator.landings;
+    selection.clear();
+  }
+  const shown = session ? selection.current(focus?.index ?? null) : null;
+  const viewing = shown && shown.source !== 'landing' ? shown.index : null;
+  const card = shown ? tileCardInfo({ state: session.state, board, rules: RULES }, shown.index) : null;
+  updateReadout(shown, card);
+  const compactCard = canvas.clientWidth < COMPACT_CARD_WIDTH;
+  cardPanel.render(compactCard ? card : null, shown?.source === 'landing' ? '落点' : '查看');
   renderer.draw({
     board,
     state: session?.state ?? null,
     tokens: animator?.tokens ?? null,
     dice: animator?.dice ?? null,
     floaters: animator?.floaters ?? [],
+    effects: animator?.effects,
     currentPlayerId: session && session.state.phase !== PHASES.GAME_OVER ? (session.game.currentPlayer()?.id ?? null) : null,
+    focus,
+    viewing,
+    // 卡片内容每帧从当前状态读取，买下、升级后立刻更新
+    card,
+    cardLabel: shown ? (shown.source === 'landing' ? '落点' : '查看') : null,
+    compactCard,
   });
   if (needMore) requestFrame();
+}
+
+/** 把正在查看的格子写成一句话，给读屏软件用（只朗读玩家主动查看的格子） */
+function updateReadout(shown, card) {
+  let text = '';
+  if (shown && shown.source !== 'landing') {
+    const tile = board.tiles[shown.index];
+    text = card
+      ? [
+          `${card.name}，售价 ${money(card.price)}`,
+          card.mortgaged ? '已抵押，免租' : `${card.owner ? '租金' : '空地租金'} ${money(card.rent)}`,
+          card.owner ? `所有者 ${card.owner.name}` : '无主',
+          `${card.level} 级`,
+        ].join('，')
+      : tile.type === 'jail'
+        ? '监狱'
+        : tile.name;
+  }
+  if (text === lastReadout) return;
+  lastReadout = text;
+  $('tile-readout').textContent = text;
 }
 
 /** 动画播完、状态稳定时自动存档；终局后删除存档（没有可继续的内容） */
@@ -158,6 +211,7 @@ function startSession(state, intro) {
 
   const animator = createAnimator({
     state,
+    tileIds: board.tiles.map((t) => t.id),
     reducedMotion: reducedMotion.matches,
     onEvent(type, payload) {
       const text = formatEvent(type, payload, fmtCtx);
@@ -169,10 +223,14 @@ function startSession(state, intro) {
     onIdle: renderPanel,
   });
   animator.setSpeed(speed);
+  animator.setCalm(state.players.every((p) => p.isAI));
   bus.on('*', animator.handle);
   const driver = createAiDriver({ game, state, board, rules: RULES });
 
   session = { state, game, animator, driver, aiTimer: null };
+  seenLandings = 0;
+  selection.clear();
+  selection.setHover(null);
   saveErrorShown = false;
   setup.hide();
   $('game').hidden = false;
@@ -180,7 +238,8 @@ function startSession(state, intro) {
   for (const line of intro) log.add(line, 'highlight');
   resize();
   renderPanel();
-  $('actions').querySelector('button')?.focus();
+  // 窄屏时操作按钮在棋盘下方，聚焦时不要把页面滚走
+  $('actions').querySelector('button')?.focus({ preventScroll: true });
 }
 
 /** @param {{ name: string, isAI: boolean, aiLevel?: string }[]} players */
@@ -343,6 +402,15 @@ function resize() {
 }
 
 new ResizeObserver(resize).observe(canvas.parentElement);
+
+bindBoardPicker({
+  canvas,
+  selection,
+  pickTile: renderer.pickTile,
+  isProperty: (index) => board.tiles[index]?.type === 'property',
+  landingIndex: () => session?.animator.focus?.index ?? null,
+  onChange: requestFrame,
+});
 
 const muteButton = $('mute');
 muteButton.addEventListener('click', () => {

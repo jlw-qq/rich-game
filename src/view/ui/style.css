@@ -9,6 +9,11 @@
   --accent: #4fa3ff;
   --danger: #e05555;
   --focus: #ffd24f;
+  /* 统一的描边与圆角 */
+  --line: #5b6680;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
 }
 
 * {
@@ -51,8 +56,8 @@ h2 {
 .btn {
   font: inherit;
   padding: 6px 14px;
-  border-radius: 6px;
-  border: 1px solid #5b6680;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
   background: var(--panel-2);
   color: var(--text);
   cursor: pointer;
@@ -113,7 +118,7 @@ select:focus-visible {
   gap: 12px;
   min-width: min(360px, 100%);
   padding: 24px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--panel);
 }
 
@@ -132,8 +137,8 @@ select:focus-visible {
   flex: 1;
   font: inherit;
   padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid #5b6680;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
   background: #1b2130;
   color: var(--text);
 }
@@ -145,7 +150,7 @@ select:focus-visible {
 
 .setup-resume {
   padding: 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--panel-2);
 }
 
@@ -225,7 +230,7 @@ select:focus-visible {
   display: none;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1100px) {
   .game {
     grid-template-columns: 1fr;
   }
@@ -237,8 +242,15 @@ select:focus-visible {
 
 #board {
   display: block;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: #222a38;
+  /* 触屏点选不触发双击缩放 */
+  touch-action: manipulation;
+}
+
+#board:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .side {
@@ -250,7 +262,7 @@ select:focus-visible {
 
 .card {
   padding: 12px;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--panel);
 }
 
@@ -279,7 +291,7 @@ select:focus-visible {
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--panel);
   border: 2px solid transparent;
 }
@@ -332,7 +344,7 @@ select:focus-visible {
   padding: 0 6px;
   border-radius: 4px;
   font-size: 0.75rem;
-  background: #5b6680;
+  background: var(--line);
 }
 
 .asset-list {
@@ -374,7 +386,7 @@ select:focus-visible {
   padding: 8px 10px;
   height: 220px;
   overflow-y: auto;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: #171c26;
   font-size: 0.85rem;
 }
@@ -404,8 +416,8 @@ select:focus-visible {
   width: min(640px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
   padding: 16px;
-  border: 1px solid #5b6680;
-  border-radius: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
   background: var(--panel);
   color: var(--text);
 }
@@ -429,8 +441,8 @@ select:focus-visible {
 .trade-side {
   margin: 0;
   padding: 10px;
-  border: 1px solid #5b6680;
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -461,8 +473,55 @@ select:focus-visible {
 .trade-field select {
   font: inherit;
   padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid #5b6680;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
   background: var(--panel-2);
   color: var(--text);
+}
+
+/* ---------- 侧栏地产详情（小画布时显示） ---------- */
+
+.tile-card {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: #f7f3e8;
+  color: #222;
+  border: 1px solid var(--line);
+}
+
+.tile-card[hidden] {
+  display: none;
+}
+
+.tile-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 6px 12px;
+  font-size: 1.05rem;
+}
+
+.tile-card-tag {
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
+.tile-card-body {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 12px;
+  margin: 0;
+  padding: 8px 12px 10px;
+}
+
+.tile-card-body dt {
+  color: #555;
+}
+
+.tile-card-body dd {
+  margin: 0;
+}
+
+.tile-card-body .muted {
+  color: #555;
 }
