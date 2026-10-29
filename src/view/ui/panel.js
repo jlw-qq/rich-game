@@ -50,16 +50,19 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
           el(
             'div',
             { class: 'player-info' },
-            el('div', { class: 'player-name' }, p.name, p.isAI ? el('span', { class: 'tag' }, 'AI') : null),
+            el(
+              'div',
+              { class: 'player-name' },
+              el('span', {}, p.name, p.isAI ? el('span', { class: 'tag' }, 'AI') : null),
+              p.bankrupt ? null : el('span', { class: 'player-cash' }, money(p.cash)),
+            ),
             el(
               'div',
               { class: 'player-meta' },
               p.bankrupt
                 ? '已破产'
                 : [
-                    `现金 ${money(p.cash)}`,
-                    ` · 地产 ${ownedCount(p.id)} 块`,
-                    ` · 总资产 ${money(game.netWorth(p.id))}`,
+                    `地产 ${ownedCount(p.id)} 块 · 总资产 ${money(game.netWorth(p.id))}`,
                     p.inJail ? ' · 坐牢中' : '',
                     p.jailFreeCards.length > 0 ? ` · 出狱卡 ×${p.jailFreeCards.length}` : '',
                   ].join(''),

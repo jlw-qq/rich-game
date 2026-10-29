@@ -25,7 +25,7 @@ export function createCardPanel(root) {
 
     const header = GROUP_HEADERS[card.group];
     const rent = card.mortgaged ? '已抵押，免租' : money(card.rent);
-    const houses = Array.from({ length: card.maxLevel }, (_, k) => (k < card.level ? '■' : '□')).join('');
+    const houses = Array.from({ length: card.maxLevel }, (_, k) => el('span', { class: k < card.level ? 'house house-built' : 'house' }));
     root.replaceChildren(
       el(
         'div',
@@ -52,8 +52,8 @@ export function createCardPanel(root) {
         el(
           'dd',
           {},
-          el('span', { 'aria-hidden': 'true' }, houses),
-          ` ${card.level} 级`,
+          el('span', { class: 'houses', 'aria-hidden': 'true' }, houses),
+          ` 等级 ${card.level}/${card.maxLevel}`,
           ` · ${upgradeText(card, money)}`,
         ),
       ),

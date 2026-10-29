@@ -35,9 +35,8 @@ export const isCompactCard = (cellHeight) => cellHeight * CARD_TEXT_RATIO < MIN_
 export function upgradeText({ upgrade }, fmt) {
   switch (upgrade.kind) {
     case 'unowned':
-      return `1 级租金 ${fmt(upgrade.rent)}`;
     case 'needGroup':
-      return `凑齐整组可升级 · 1 级 ${fmt(upgrade.rent)}`;
+      return `凑齐整组后可升级 · 1 级 ${fmt(upgrade.rent)}`;
     case 'mortgaged':
       return '赎回后才能升级';
     case 'groupMortgaged':

@@ -89,7 +89,7 @@ describe('升级说明', () => {
     Object.assign(state.properties.xining, { ownerId: 'p1' });
     const c = card(state, 'xining');
     expect(c.upgrade).toEqual({ kind: 'needGroup', rent: 100 });
-    expect(upgradeText(c, fmt)).toBe('凑齐整组可升级 · 1 级 ¥100');
+    expect(upgradeText(c, fmt)).toBe('凑齐整组后可升级 · 1 级 ¥100');
   });
 
   it('本格已抵押：提示赎回；同组其他地已抵押：提示同组赎回', () => {
@@ -102,7 +102,7 @@ describe('升级说明', () => {
 
   it('各种情况的文字', () => {
     const state = newState();
-    expect(upgradeText(card(state, 'xining'), fmt)).toBe('1 级租金 ¥100');
+    expect(upgradeText(card(state, 'xining'), fmt)).toBe('凑齐整组后可升级 · 1 级 ¥100');
     Object.assign(state.properties.xining, { ownerId: 'p1', level: 1 });
     Object.assign(state.properties.yinchuan, { ownerId: 'p1' });
     expect(upgradeText(card(state, 'xining'), fmt)).toBe('下一级 ¥300');

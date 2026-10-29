@@ -237,7 +237,21 @@ select:focus-visible {
 }
 
 .board-wrap {
+  position: relative;
   min-width: 0;
+}
+
+/* 放大查看时的“缩小”按钮，浮在棋盘右上角 */
+.zoom-out {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.4);
+}
+
+.zoom-out[hidden] {
+  display: none;
 }
 
 #board {
@@ -331,7 +345,15 @@ select:focus-visible {
 }
 
 .player-name {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
   font-weight: 600;
+}
+
+.player-cash {
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .player-meta {
@@ -354,7 +376,8 @@ select:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 220px;
+  /* 约 6 行，更多时在自己区域里滚动 */
+  max-height: 176px;
   overflow-y: auto;
 }
 
@@ -453,7 +476,8 @@ select:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 220px;
+  /* 约 6 行，更多时在自己区域里滚动 */
+  max-height: 176px;
   overflow-y: auto;
 }
 
@@ -551,4 +575,74 @@ select:focus-visible {
   .hint-touch {
     display: none;
   }
+}
+
+/* ---------- 侧栏工具栏（声音、倍速、存档、返回），始终在首屏 ---------- */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.toolbar .btn {
+  padding: 4px 10px;
+  font-size: 0.85rem;
+}
+
+.player-info {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 双栏时侧栏高度不超过窗口，日志占剩余空间并在自己区域里滚动 */
+@media (min-width: 1101px) {
+  .side {
+    position: sticky;
+    top: 16px;
+    max-height: calc(100vh - 32px);
+    align-self: start;
+    /* 内容仍超出窗口时在侧栏内部滚动，工具栏始终在顶部 */
+    overflow-y: auto;
+  }
+
+  .toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding-bottom: 6px;
+    background: var(--bg);
+  }
+
+  .side > section:has(#log) {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .log {
+    flex: 1;
+    height: auto;
+    min-height: 120px;
+  }
+}
+
+/* ---------- 侧栏卡片里的房屋图标 ---------- */
+
+.houses {
+  display: inline-flex;
+  gap: 3px;
+  vertical-align: -1px;
+}
+
+.house {
+  width: 12px;
+  height: 12px;
+  background: #c9c4b8;
+  clip-path: polygon(50% 0, 100% 45%, 100% 100%, 0 100%, 0 45%);
+}
+
+.house-built {
+  background: #2e8b57;
 }

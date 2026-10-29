@@ -29,6 +29,7 @@ import { createResults } from './view/ui/results.js';
 import { createSetup } from './view/ui/setup.js';
 import { createTradeDialog } from './view/ui/trade.js';
 import { bindBoardPicker, createSelection } from './view/ui/boardPicker.js';
+import { createViewport } from './view/render/viewport.js';
 import { money } from './view/ui/format.js';
 import { createCardPanel } from './view/ui/cardPanel.js';
 
@@ -86,6 +87,12 @@ function loadSpeed() {
 }
 let speed = loadSpeed();
 
+/** 棋盘缩放与平移（只在小画布的触屏设备上使用） */
+const viewport = createViewport();
+const zoomOutButton = $('zoom-out');
+/** 棋盘上的字小到需要侧栏卡片时，允许放大查看 */
+const zoomEnabled = () => isCompactCard(renderer.cellHeight);
+
 /** 玩家正在查看的格子（悬停、点选、键盘） */
 const selection = createSelection(board.size);
 /** 上一次看到的落地次数；有新落点时取消固定查看，让玩家先看到“走到哪儿” */
@@ -110,6 +117,17 @@ function frame(now) {
   frameRequested = false;
   const animator = session?.animator;
   const needMore = animator ? animator.tick(now) : false;
+  let viewMoving = viewport.tick(now);
+  // 放大状态下，镜头跟着正在移动的棋子
+  if (viewport.zoomed && animator?.busy) {
+    const tok = animator.tokens.get(session.game.currentPlayer()?.id);
+    if (tok) {
+      const p = renderer.boardPoint(tok.gx, tok.gy);
+      viewMoving = viewport.follow(p.x, p.y) || viewMoving;
+    }
+  }
+  zoomOutButton.hidden = !viewport.zoomed;
+  canvas.style.touchAction = viewport.zoomed ? 'none' : '';
   const focus = animator?.focus ?? null;
   if (animator && animator.landings !== seenLandings) {
     seenLandings = animator.landings;
@@ -136,8 +154,9 @@ function frame(now) {
     card,
     cardLabel: shown ? (shown.source === 'landing' ? '落点' : '查看') : null,
     compactCard,
+    view: viewport.view,
   });
-  if (needMore) requestFrame();
+  if (needMore || viewMoving) requestFrame();
 }
 
 /** 把正在查看的格子写成一句话，给读屏软件用（只朗读玩家主动查看的格子） */
@@ -395,6 +414,7 @@ function resize() {
   // 画布宽度跟随容器，高度固定为宽度的 0.62 倍，正好放下等距棋盘
   const width = Math.floor(rect.width);
   renderer.resize(width, Math.floor(width * 0.62));
+  viewport.resize(width, Math.floor(width * 0.62));
   canvas.style.width = `${width}px`;
   canvas.style.height = `${Math.floor(width * 0.62)}px`;
   requestFrame();
@@ -405,7 +425,12 @@ new ResizeObserver(resize).observe(canvas.parentElement);
 bindBoardPicker({
   canvas,
   selection,
-  pickTile: renderer.pickTile,
+  // 先扣除缩放平移，再按棋盘坐标找格子
+  pickTile: (x, y) => {
+    const b = viewport.toBoard(x, y);
+    return renderer.pickTile(b.x, b.y);
+  },
+  zoom: { viewport, enabled: zoomEnabled },
   isProperty: (index) => board.tiles[index]?.type === 'property',
   landingIndex: () => session?.animator.focus?.index ?? null,
   onChange: requestFrame,
@@ -432,6 +457,11 @@ speedButton.addEventListener('click', () => {
   }
 });
 renderSpeed();
+
+zoomOutButton.addEventListener('click', () => {
+  viewport.reset(performance.now());
+  requestFrame();
+});
 
 $('export').addEventListener('click', downloadSave);
 $('quit').addEventListener('click', () => leaveToSetup());

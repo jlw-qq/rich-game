@@ -269,8 +269,11 @@ export function createBoardRenderer(canvas) {
         ctx.stroke();
       }
     }
-    // 房子图标占左侧约 1/4，升级说明可以用剩下的宽度
-    alignedText(upgradeText(card, num), xr, row(2), size, w - pad * 2 - hs * 1.35 * card.maxLevel - pad, BOARD_COLORS.subText, 'right');
+    // 房子图标后写“n/4”，升级说明用剩下的宽度
+    const levelX = xl + hs * 1.35 * card.maxLevel;
+    alignedText(`${card.level}/${card.maxLevel}`, levelX, row(2), size, tw * 0.3, BOARD_COLORS.text, 'left', 'bold');
+    const used = levelX - xl + size * 2;
+    alignedText(upgradeText(card, num), xr, row(2), size, w - pad * 3 - used, BOARD_COLORS.subText, 'right');
   }
 
   /** 查看中的格子：白色细描边 */
@@ -636,6 +639,7 @@ export function createBoardRenderer(canvas) {
    *   viewing?: number | null,
    *   cardLabel?: string | null,
    *   compactCard?: boolean,
+   *   view?: { scale: number, ox: number, oy: number },
    * }} scene focus 为落点高亮；card 为中央显示的地产卡片，cardLabel 为卡片角标；
    *   effects 为格子特效；viewing 为玩家正在查看的格子
    */
@@ -652,10 +656,13 @@ export function createBoardRenderer(canvas) {
     viewing = null,
     cardLabel = null,
     compactCard = false,
+    view = { scale: 1, ox: 0, oy: 0 },
   }) {
     effects = tileEffects;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssWidth, cssHeight);
+    // 缩放与平移：之后所有绘制都在棋盘坐标里进行
+    ctx.setTransform(dpr * view.scale, 0, 0, dpr * view.scale, dpr * view.ox, dpr * view.oy);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
@@ -678,8 +685,10 @@ export function createBoardRenderer(canvas) {
   return {
     resize,
     draw,
-    /** 画布上的点（CSS 像素）落在哪个格子顶面上，没有则为 null */
+    /** 棋盘坐标（未缩放时的 CSS 像素）落在哪个格子顶面上，没有则为 null */
     pickTile: (x, y) => tileAt(layout, x, y),
+    /** 网格坐标 → 棋盘坐标，用于镜头跟随棋子 */
+    boardPoint: (gx, gy) => project(layout, gx, gy),
     /** 当前格高（CSS 像素），用来判断棋盘上的文字是否太小 */
     get cellHeight() {
       return layout.th;
