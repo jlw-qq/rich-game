@@ -2,7 +2,7 @@
   "name": "rich-game",
   "version": "0.1.0",
   "private": true,
-  "description": "大富翁 - 2.5D 回合制棋盘游戏（Canvas 2D）",
+  "description": "城市大富翁 - 2.5D 回合制城市经营棋盘游戏（Canvas 2D）",
   "type": "module",
   "scripts": {
     "dev": "vite",

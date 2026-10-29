@@ -2,6 +2,7 @@
  * 表现层：终局结算表。排名由逻辑层 computeRanking 计算，这里只负责显示。
  */
 import { el } from './dom.js';
+import { brandHeading } from './brandHeading.js';
 import { money } from './format.js';
 import { PLAYER_COLORS } from '../render/theme.js';
 
@@ -21,7 +22,7 @@ export function createResults(root) {
         : '其他玩家全部破产';
 
     root.replaceChildren(
-      el('h2', { id: 'results-title' }, '结算'),
+      brandHeading('h2', 28, { id: 'results-title', suffix: '本局结算' }),
       el('p', { class: 'muted' }, reason),
       el(
         'table',

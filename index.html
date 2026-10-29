@@ -3,9 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>大富翁</title>
-    <!-- 空图标，避免浏览器请求 /favicon.ico 报 404 -->
-    <link rel="icon" href="data:," />
+    <title>城市大富翁</title>
+    <!-- 先放空图标避免请求 /favicon.ico；启动后由 main.js 换成游戏标志 -->
+    <link id="favicon" rel="icon" href="data:," />
     <link rel="stylesheet" href="/src/view/ui/style.css" />
   </head>
   <body>
@@ -18,7 +18,7 @@
           id="board"
           role="img"
           tabindex="0"
-          aria-label="大富翁棋盘。选中后用左右方向键逐格查看地产，Esc 取消；玩家位置见右侧面板和事件日志"
+          aria-label="城市大富翁棋盘。选中后用左右方向键逐格查看地产，Esc 取消；玩家位置见右侧面板和事件日志"
           aria-describedby="tile-readout"
         ></canvas>
         <p id="tile-readout" class="visually-hidden" aria-live="polite"></p>

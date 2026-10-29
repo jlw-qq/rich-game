@@ -7,11 +7,15 @@ import { tradeSideText } from '../ui/format.js';
 import { GROUP_HEADERS, PLAYER_COLORS } from './theme.js';
 import { LANDMARKS } from './city.js';
 import { easeOutBack } from './easing.js';
+import { drawLogo } from '../brand.js';
 
-/** 普通对局：结果卡停留时长，期间暂停后续事件（按播放倍速缩短） */
-export const POPUP_MS = 1000;
-/** 观战：不打断流程的小提示条 */
-export const TOAST_MS = 1400;
+/**
+ * 普通对局：结果卡停留时长，期间暂停后续事件。不随播放倍速缩短——倍速只加快掷骰和移动，
+ * 关键结果要留出阅读时间；玩家可以点击或按键提前关掉。
+ */
+export const POPUP_MS = 1200;
+/** 观战：不打断流程的小提示条，同样不随倍速缩短 */
+export const TOAST_MS = 1500;
 
 /** 地标的中文名，用于“建成某某”的文案 */
 export const LANDMARK_NAMES = {
@@ -183,7 +187,7 @@ export function drawPopup(ctx, { width, height }, popup, { t, toast, reducedMoti
 
   const w = Math.min(width * 0.62, 380);
   const art = popup.tileId ? Math.min(110, height * 0.28) : 0;
-  const h = art + 96;
+  const h = art + 112;
   const cx = width / 2;
   const cy = height / 2;
   ctx.translate(cx, cy);
@@ -247,9 +251,13 @@ export function drawPopup(ctx, { width, height }, popup, { t, toast, reducedMoti
     ctx.globalAlpha = alpha;
   }
 
+  // 左上角的游戏标志，让结果卡带上这款游戏的记号
+  drawLogo(ctx, left + 22, top + 22, 30);
+
   const textTop = top + (art || 10);
   fitLine(ctx, popup.title, 0, textTop + 32, 20, w - 28, '#2b2118', 'bold');
   fitLine(ctx, popup.text, 0, textTop + 64, 15, w - 28, '#5e4d3b', 'normal');
+  fitLine(ctx, '点击或按任意键继续', 0, textTop + 90, 12, w - 28, '#6b5a48', 'normal');
   ctx.restore();
 }
 

@@ -154,15 +154,14 @@ export function createAnimator({ state, tileIds = [], describePopup = () => null
     // 在落点格付租金或交税：金额出现后光边交棒，顺序是“停在这里 → 付了多少”
     if (type === 'paymentMade' && p.reason?.tileId) handOff(p.reason.tileId);
 
-    // 关键事件弹结果卡。时长不受“减少动态效果”影响（那只是去掉弹出动画），按倍速缩短
+    // 关键事件弹结果卡。时长不随倍速和“减少动态效果”变化（后者只是去掉弹出动画），保证读得完
     const card = describePopup(type, p);
     if (card) {
       if (calm) {
-        popup = { data: card, born: lastNow, ms: TOAST_MS / speed, toast: true };
+        popup = { data: card, born: lastNow, ms: TOAST_MS, toast: true };
       } else {
-        const ms = POPUP_MS / speed;
-        popup = { data: card, born: lastNow, ms, toast: false };
-        return { duration: ms, update() {} };
+        popup = { data: card, born: lastNow, ms: POPUP_MS, toast: false };
+        return { duration: POPUP_MS, popup: true, update() {} };
       }
     }
 
@@ -313,6 +312,17 @@ export function createAnimator({ state, tileIds = [], describePopup = () => null
     get popup() {
       if (!popup) return null;
       return { data: popup.data, t: Math.min(1, (lastNow - popup.born) / popup.ms), toast: popup.toast };
+    },
+    /**
+     * 玩家提前关掉结果卡：卡片消失，被它暂停的后续事件下一帧开始播放。
+     * @returns {boolean} 是否关掉了一张会暂停对局的结果卡
+     */
+    dismissPopup() {
+      if (!popup || popup.toast) return false;
+      popup = null;
+      if (current?.popup) current.duration = 0;
+      onChange();
+      return true;
     },
     /** 累计落地次数 */
     get landings() {

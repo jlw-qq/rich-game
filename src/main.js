@@ -22,6 +22,7 @@ import { createBoardRenderer } from './view/render/boardRenderer.js';
 import { createAnimator } from './view/render/animator.js';
 import { isCompactCard, tileCardInfo } from './view/render/tileCard.js';
 import { createPopupDescriber } from './view/render/popup.js';
+import { faviconHref } from './view/brand.js';
 import { createSound } from './view/audio/sound.js';
 import { formatEvent } from './view/ui/format.js';
 import { createLog } from './view/ui/log.js';
@@ -35,6 +36,7 @@ import { money } from './view/ui/format.js';
 import { createCardPanel } from './view/ui/cardPanel.js';
 
 const $ = (id) => document.getElementById(id);
+$('favicon').setAttribute('href', faviconHref());
 
 const board = createBoard({ tiles: TILES, groups: GROUPS, rules: RULES });
 const saveCtx = { board, rules: RULES, cards: CARDS };
@@ -457,6 +459,23 @@ function resize() {
 }
 
 new ResizeObserver(resize).observe(canvas.parentElement);
+
+/**
+ * 点棋盘或按任意键提前关掉结果卡。关掉时这次点击或按键只用来关卡片：
+ * 不再当作选格子，也不会顺带触发焦点所在的按钮（如 Enter 切换倍速）。
+ */
+function dismissPopup(e) {
+  if (session?.animator.dismissPopup()) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    requestFrame();
+  }
+}
+canvas.addEventListener('click', dismissPopup, { capture: true });
+document.addEventListener('keydown', (e) => {
+  // Tab 用来移动焦点，不拦截
+  if (e.key !== 'Tab') dismissPopup(e);
+}, { capture: true });
 
 bindBoardPicker({
   canvas,

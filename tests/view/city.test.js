@@ -5,7 +5,7 @@ import { describe, it, expect } from 'vitest';
 import { TILES, GROUPS } from '../../src/data/config/board.js';
 import { RULES } from '../../src/data/config/rules.js';
 import { createBoard } from '../../src/logic/core/board.js';
-import { buildingSpec, cityLots, growth, LANDMARK_KINDS, LANDMARKS, LEVEL_HEIGHTS } from '../../src/view/render/city.js';
+import { buildingSpec, cityGround, cityLots, growth, LANDMARK_KINDS, LANDMARKS, LEVEL_HEIGHTS, PLAZA_MAX, PLAZA_MIN } from '../../src/view/render/city.js';
 
 const board = createBoard({ tiles: TILES, groups: GROUPS, rules: RULES });
 const props = TILES.filter((t) => t.type === 'property');
@@ -64,5 +64,36 @@ describe('建筑规格', () => {
     expect(growth({ kind: 'buy', t: 0 })).toBeCloseTo(0);
     expect(growth({ kind: 'upgrade', t: 1 })).toBeCloseTo(1);
     expect(growth({ kind: 'mortgage', t: 0.3 })).toBe(1);
+  });
+});
+
+describe('城市地面', () => {
+  const lots = cityLots(board);
+  const ground = cityGround(board);
+  const HALF = 0.38;
+  const lotRect = (l) => ({ gx0: l.gx - HALF, gx1: l.gx + HALF, gy0: l.gy - HALF, gy1: l.gy + HALF });
+  const overlaps = (a, b) => a.gx0 < b.gx1 && b.gx0 < a.gx1 && a.gy0 < b.gy1 && b.gy0 < a.gy1;
+
+  it('道路不压到任何地块、公园，也不进入广场', () => {
+    const plaza = { gx0: PLAZA_MIN, gx1: PLAZA_MAX, gy0: PLAZA_MIN, gy1: PLAZA_MAX };
+    for (const r of ground.roads) {
+      for (const l of lots) expect(overlaps(r, lotRect(l)), l.tileId).toBe(false);
+      for (const p of ground.parks) expect(overlaps(r, lotRect(p))).toBe(false);
+      expect(overlaps(r, plaza)).toBe(false);
+    }
+  });
+
+  it('公园放在没有地产的位置，不和地块重叠；每块地都落在人行道上', () => {
+    expect(ground.parks.length).toBeGreaterThan(0);
+    for (const p of ground.parks) for (const l of lots) expect(overlaps(lotRect(p), lotRect(l))).toBe(false);
+    const inside = (r, l) => l.gx - HALF >= r.gx0 && l.gx + HALF <= r.gx1 && l.gy - HALF >= r.gy0 && l.gy + HALF <= r.gy1;
+    for (const l of lots) expect(ground.sidewalks.some((r) => inside(r, l)), l.tileId).toBe(true);
+  });
+
+  it('所有地面都在中央区域内，不压到外圈格子', () => {
+    for (const r of [...ground.sidewalks, ...ground.roads]) {
+      expect(Math.min(r.gx0, r.gy0)).toBeGreaterThanOrEqual(0.5);
+      expect(Math.max(r.gx1, r.gy1)).toBeLessThanOrEqual(9.5);
+    }
   });
 });

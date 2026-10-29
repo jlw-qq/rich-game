@@ -3,6 +3,7 @@
  */
 import { el } from './dom.js';
 import { PLAYER_COLORS } from '../render/theme.js';
+import { brandHeading } from './brandHeading.js';
 
 const DEFAULT_NAMES = ['小红', '小蓝', '小黄', '小绿', '小紫'];
 
@@ -92,7 +93,7 @@ export function createSetup({ root, rules, validate, onStart, onImport }) {
           onStart(players);
         },
       },
-      el('h1', {}, '大富翁'),
+      brandHeading('h1', 44),
       resume &&
         el(
           'div',

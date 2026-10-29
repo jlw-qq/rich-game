@@ -3,7 +3,7 @@
  * 无主是空地，买下后插上地主的旗，升级后楼房长高，满级变成这座城市的地标。
  * 只读游戏状态，不修改。位置、建筑规格是纯函数，绘制函数只负责画。
  */
-import { gridOf, outwardOf } from './layout.js';
+import { gridOf, outwardOf, SIDE } from './layout.js';
 import { GROUP_COLORS, PLAYER_COLORS, shade } from './theme.js';
 import { easeOutBack } from './easing.js';
 
@@ -55,6 +55,66 @@ export function cityLots(board) {
       return { tileId: t.id, index: t.index, group: t.group, gx: gx - dx * LOT_INSET, gy: gy - dy * LOT_INSET };
     })
     .sort((a, b) => a.gx + a.gy - (b.gx + b.gy));
+}
+
+/** 环路的范围（网格坐标）与路宽；环路内侧就是中央广场 */
+export const RING_MIN = 2.7;
+export const RING_MAX = SIDE - RING_MIN;
+export const ROAD_WIDTH = 0.55;
+/** 中央广场：紧贴环路内侧 */
+export const PLAZA_MIN = RING_MIN + ROAD_WIDTH + 0.05;
+export const PLAZA_MAX = SIDE - PLAZA_MIN;
+/** 四条主路在每边正中，把地块分成街区 */
+const SPOKE_HALF = 0.28;
+const EDGE = 0.5;
+
+/**
+ * 城市的地面布局：人行道（地块所在的街区底板）、道路、小公园。纯数据，坐标为网格矩形。
+ * 公园放在每条街区里没有地产的位置（对着外圈的机会、命运、税格），正中留给主路。
+ * @param {{ tiles: readonly object[] }} board
+ * @returns {{
+ *   sidewalks: { gx0: number, gy0: number, gx1: number, gy1: number }[],
+ *   roads: { gx0: number, gy0: number, gx1: number, gy1: number }[],
+ *   parks: { gx: number, gy: number }[],
+ * }}
+ */
+export function cityGround(board) {
+  const near = LOT_INSET;
+  const far = SIDE - LOT_INSET;
+  const pad = LOT_HALF + 0.1;
+  const lo = EDGE + 0.1;
+  const hi = SIDE - EDGE - 0.1;
+  const sidewalks = [
+    { gx0: near - pad, gx1: near + pad, gy0: lo, gy1: hi },
+    { gx0: far - pad, gx1: far + pad, gy0: lo, gy1: hi },
+    { gx0: lo, gx1: hi, gy0: near - pad, gy1: near + pad },
+    { gx0: lo, gx1: hi, gy0: far - pad, gy1: far + pad },
+  ];
+  const mid = SIDE / 2;
+  const roads = [
+    // 环路四段
+    { gx0: RING_MIN, gx1: RING_MAX, gy0: RING_MIN, gy1: RING_MIN + ROAD_WIDTH },
+    { gx0: RING_MIN, gx1: RING_MAX, gy0: RING_MAX - ROAD_WIDTH, gy1: RING_MAX },
+    { gx0: RING_MIN, gx1: RING_MIN + ROAD_WIDTH, gy0: RING_MIN, gy1: RING_MAX },
+    { gx0: RING_MAX - ROAD_WIDTH, gx1: RING_MAX, gy0: RING_MIN, gy1: RING_MAX },
+    // 四条主路：从环路通到棋盘边
+    { gx0: EDGE, gx1: RING_MIN, gy0: mid - SPOKE_HALF, gy1: mid + SPOKE_HALF },
+    { gx0: RING_MAX, gx1: SIDE - EDGE, gy0: mid - SPOKE_HALF, gy1: mid + SPOKE_HALF },
+    { gx0: mid - SPOKE_HALF, gx1: mid + SPOKE_HALF, gy0: EDGE, gy1: RING_MIN },
+    { gx0: mid - SPOKE_HALF, gx1: mid + SPOKE_HALF, gy0: RING_MAX, gy1: SIDE - EDGE },
+  ];
+  // 靠近棋盘角落的空位会和相邻一边的地块重叠，这些位置不放公园
+  const lots = cityLots(board);
+  const clear = (p) => lots.every((l) => Math.max(Math.abs(l.gx - p.gx), Math.abs(l.gy - p.gy)) >= LOT_HALF * 2);
+  const parks = board.tiles
+    .filter((t) => t.index % SIDE !== 0 && t.index % SIDE !== SIDE / 2 && t.type !== 'property')
+    .map((t) => {
+      const { gx, gy } = gridOf(t.index);
+      const [dx, dy] = outwardOf(t.index);
+      return { gx: gx - dx * LOT_INSET, gy: gy - dy * LOT_INSET };
+    })
+    .filter(clear);
+  return { sidewalks, roads, parks };
 }
 
 /**
@@ -322,14 +382,81 @@ export function createCityPainter(ctx, layout, project) {
     },
   };
 
+  /** 网格矩形 → 屏幕上的菱形 */
+  function rectPath(r) {
+    poly([project(r.gx0, r.gy0), project(r.gx1, r.gy0), project(r.gx1, r.gy1), project(r.gx0, r.gy1)].map((p) => [p.x, p.y]));
+  }
+
+  /** 一棵小树：树干 + 两层树冠 */
+  function tree(x, y, k) {
+    const s = th * (0.85 + (k % 3) * 0.12);
+    ctx.fillStyle = '#6b4a2b';
+    ctx.fillRect(x - s * 0.03, y - s * 0.16, s * 0.06, s * 0.16);
+    for (const [dy, r, c] of [[0.2, 0.16, '#3f8a3a'], [0.34, 0.11, '#58a64f']]) {
+      ctx.beginPath();
+      ctx.arc(x, y - s * dy, s * r, 0, Math.PI * 2);
+      ctx.fillStyle = c;
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  /**
+   * 画城市地面：街区人行道、道路（带中线）、小公园。地面是平的，在格子和建筑之前画。
+   * @param {ReturnType<typeof cityGround>} ground
+   */
+  function drawGround({ sidewalks, roads, parks }) {
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(60, 40, 20, 0.35)';
+    for (const r of sidewalks) {
+      rectPath(r);
+      ctx.fillStyle = '#ddd3bf';
+      ctx.fill();
+    }
+    for (const r of roads) {
+      rectPath(r);
+      ctx.fillStyle = '#8f8a82';
+      ctx.fill();
+    }
+    // 道路中线：沿每段路的长边方向画虚线
+    ctx.setLineDash([th * 0.18, th * 0.16]);
+    ctx.strokeStyle = 'rgba(255, 250, 235, 0.75)';
+    ctx.lineWidth = Math.max(1, th * 0.03);
+    for (const r of roads) {
+      const alongX = r.gx1 - r.gx0 > r.gy1 - r.gy0;
+      const a = alongX ? project(r.gx0, (r.gy0 + r.gy1) / 2) : project((r.gx0 + r.gx1) / 2, r.gy0);
+      const b = alongX ? project(r.gx1, (r.gy0 + r.gy1) / 2) : project((r.gx0 + r.gx1) / 2, r.gy1);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(30, 60, 25, 0.45)';
+    parks.forEach((pk, k) => {
+      rectPath({ gx0: pk.gx - LOT_HALF, gy0: pk.gy - LOT_HALF, gx1: pk.gx + LOT_HALF, gy1: pk.gy + LOT_HALF });
+      ctx.fillStyle = '#7dbb63';
+      ctx.fill();
+      for (const [u, v] of [[-0.15, -0.12], [0.16, 0.05], [-0.05, 0.18]]) {
+        const p = project(pk.gx + u, pk.gy + v);
+        tree(p.x, p.y, k);
+      }
+    });
+    ctx.restore();
+  }
+
   /**
    * 画一块地和上面的建筑。由渲染器和外圈格子一起按远近排序后调用，保证遮挡关系正确。
    * @param {ReturnType<typeof cityLots>[number]} lot
    * @param {{ properties: object, players: object[] }} state
    * @param {number} maxLevel
    * @param {Map<string, { kind: string, level?: number, t: number }>} effects
+   * @param {{ color: string, alpha: number } | null} [link] 外圈对应格子被查看或刚落点时，地块描边呼应
    */
-  function drawLot(lot, state, maxLevel, effects) {
+  function drawLot(lot, state, maxLevel, effects, link = null) {
     ctx.save();
     ctx.lineJoin = 'round';
     {
@@ -340,12 +467,29 @@ export function createCityPainter(ctx, layout, project) {
       const ownerIndex = state.players.findIndex((p) => p.id === prop.ownerId);
       const owner = PLAYER_COLORS[ownerIndex] ?? '#999';
 
-      // 地块底座：组色薄板；无主时半透明，像一块待售空地
-      ctx.globalAlpha = spec.kind === 'empty' ? 0.45 : 1;
+      // 地块底座：无主是中性的待售空地，只在边缘留一圈组色细线；买下后换成组色地面
       ctx.strokeStyle = 'rgba(60, 40, 20, 0.5)';
       ctx.lineWidth = 1;
-      box(x, y, LOT_HALF, LOT_HALF, th * 0.05, shade(GROUP_COLORS[lot.group], 1.1));
-      ctx.globalAlpha = 1;
+      if (spec.kind === 'empty') {
+        box(x, y, LOT_HALF, LOT_HALF, th * 0.03, '#ece6d8');
+        rectPath({ gx0: lot.gx - LOT_HALF * 0.86, gy0: lot.gy - LOT_HALF * 0.86, gx1: lot.gx + LOT_HALF * 0.86, gy1: lot.gy + LOT_HALF * 0.86 });
+        ctx.translate(0, -th * 0.03);
+        ctx.strokeStyle = GROUP_COLORS[lot.group];
+        ctx.lineWidth = Math.max(1.5, th * 0.04);
+        ctx.stroke();
+        ctx.translate(0, th * 0.03);
+      } else {
+        box(x, y, LOT_HALF, LOT_HALF, th * 0.05, shade(GROUP_COLORS[lot.group], 1.1));
+      }
+      if (link) {
+        ctx.save();
+        ctx.globalAlpha = link.alpha;
+        rectPath({ gx0: lot.gx - LOT_HALF - 0.06, gy0: lot.gy - LOT_HALF - 0.06, gx1: lot.gx + LOT_HALF + 0.06, gy1: lot.gy + LOT_HALF + 0.06 });
+        ctx.strokeStyle = link.color;
+        ctx.lineWidth = Math.max(2, th * 0.07);
+        ctx.stroke();
+        ctx.restore();
+      }
       if (spec.kind === 'empty') {
         ctx.restore();
         return;
@@ -389,5 +533,5 @@ export function createCityPainter(ctx, layout, project) {
     ctx.restore();
   }
 
-  return { drawLot, drawShape, landmarkKinds: Object.keys(LANDMARK_PAINTERS) };
+  return { drawGround, drawLot, drawShape, landmarkKinds: Object.keys(LANDMARK_PAINTERS) };
 }

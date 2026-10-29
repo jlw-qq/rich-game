@@ -5,8 +5,9 @@ import { computeLayout, gridOf, outwardOf, project, tileAt, TILE_SCALE } from '.
 import { BOARD_COLORS, GROUP_COLORS, GROUP_HEADERS, ICON_COLORS, PLAYER_COLORS, STYLE, TILE_COLORS, shade } from './theme.js';
 import { drawIcon } from './icons.js';
 import { easeOutBack, flash } from './easing.js';
-import { cityLots, createCityPainter } from './city.js';
+import { cityGround, cityLots, createCityPainter, PLAZA_MAX, PLAZA_MIN } from './city.js';
 import { drawPopup } from './popup.js';
+import { drawLogo, GAME_NAME } from '../brand.js';
 
 const FONT = 'system-ui, "Microsoft YaHei", sans-serif';
 const CORNER_TYPES = ['start', 'jail', 'parking', 'goToJail'];
@@ -23,9 +24,6 @@ const MORTGAGE_ALPHA = 0.55;
 const VIEW_COLOR = '#2f6fb3';
 /** 落点高亮颜色 */
 const HIGHLIGHT_COLOR = '#ff9f1c';
-/** 中央广场（放骰子）的网格范围 */
-const PLAZA_MIN = 3.4;
-const PLAZA_MAX = 6.6;
 /** 中央区域的网格范围，与外圈格子的内边对齐 */
 const CENTER_MIN = 0.5;
 const CENTER_MAX = 9.5;
@@ -62,8 +60,9 @@ export function createBoardRenderer(canvas) {
   let effects = new Map();
   /** 本帧地产格的城市名位置 */
   let names = [];
-  /** 中央城市：地块位置固定，按棋盘计算一次 */
+  /** 中央城市：地块和地面布局固定，按棋盘计算一次 */
   let lots = null;
+  let ground = null;
   let city = createCityPainter(ctx, layout, (gx, gy) => project(layout, gx, gy));
 
   /** 按 CSS 尺寸和设备像素比重设画布分辨率 */
@@ -108,7 +107,7 @@ export function createBoardRenderer(canvas) {
   }
 
   /** 中央：底色 + 沿等距方向的细格纹 + 内阴影，看起来比外圈格子低一层 */
-  function drawCenter() {
+  function drawCenter(board) {
     const { th } = layout;
     centerPath();
     ctx.fillStyle = BOARD_COLORS.center;
@@ -148,6 +147,10 @@ export function createBoardRenderer(canvas) {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
     ctx.lineWidth = 1;
     ctx.stroke();
+
+    // 城市地面：街区人行道、道路、小公园
+    ground ??= cityGround(board);
+    city.drawGround(ground);
 
     // 城市中心的广场：浅色石板地，骰子放在这里
     polygon(
@@ -190,17 +193,24 @@ export function createBoardRenderer(canvas) {
   function drawCenterLabels(state, dice) {
     const { th } = layout;
     const c = project(layout, 5, 5);
-    // 标题写在浅色广场上，用深色字
+    // 广场上的游戏标识：标志 + 名字，深色字写在浅色广场上
     ctx.save();
     ctx.fillStyle = BOARD_COLORS.plazaText;
-    ctx.font = `bold ${th * 0.6}px ${FONT}`;
-    ctx.fillText('大富翁', c.x, c.y - th * 1.2);
+    ctx.font = `bold ${th * 0.42}px ${FONT}`;
+    const nameW = ctx.measureText(GAME_NAME).width;
+    const mark = th * 0.62;
+    const gap = th * 0.1;
+    const left = c.x - (mark + gap + nameW) / 2;
+    const ty = c.y - th * 0.95;
+    drawLogo(ctx, left + mark / 2, ty, mark);
+    ctx.textAlign = 'left';
+    ctx.fillText(GAME_NAME, left + mark + gap, ty + th * 0.02);
     ctx.restore();
-    if (dice) drawDice({ x: c.x, y: c.y - th * 0.15 }, dice);
+    if (dice) drawDice({ x: c.x, y: c.y + th * 0.15 }, dice);
     if (state) {
       ctx.fillStyle = BOARD_COLORS.plazaText;
-      ctx.font = `bold ${th * 0.3}px ${FONT}`;
-      ctx.fillText(`第 ${state.round} 轮`, c.x, c.y + th * 0.75);
+      ctx.font = `bold ${th * 0.28}px ${FONT}`;
+      ctx.fillText(`第 ${state.round} 轮`, c.x, c.y + th * 0.95);
     }
   }
 
@@ -672,7 +682,7 @@ export function createBoardRenderer(canvas) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    drawCenter();
+    drawCenter(board);
     // 从远到近画，近处格子的侧面盖住远处
     const depthOf = (t) => {
       const { gx, gy } = gridOf(t.index);
@@ -682,15 +692,39 @@ export function createBoardRenderer(canvas) {
     drawShadows(ordered);
     // 外圈格子和中央城市地块合在一起按远近画，楼房和格子互相遮挡才正确
     lots ??= cityLots(board);
+    // 外圈格子被查看或刚落点时，对应的中央地块用同样的颜色描边呼应
+    const links = new Map();
+    const tileIdAt = (i) => board.tiles[i]?.id;
+    if (focus && focus.glow > 0) links.set(tileIdAt(focus.index), { color: HIGHLIGHT_COLOR, alpha: Math.min(1, focus.glow) });
+    if (viewing !== null) links.set(tileIdAt(viewing), { color: VIEW_COLOR, alpha: 1 });
     const scene = [
       ...ordered.map((tile) => ({ depth: depthOf(tile), draw: () => drawTile(tile, state) })),
-      ...(state ? lots.map((lot) => ({ depth: lot.gx + lot.gy, draw: () => city.drawLot(lot, state, maxLevel, effects) })) : []),
+      ...(state
+        ? lots.map((lot) => ({ depth: lot.gx + lot.gy, draw: () => city.drawLot(lot, state, maxLevel, effects, links.get(lot.tileId) ?? null) }))
+        : []),
     ].sort((a, b) => a.depth - b.depth);
     names = [];
     for (const item of scene) item.draw();
     drawNames();
     if (focus && focus.glow > 0) drawHighlight(focus.index, focus.glow);
     if (viewing !== null) drawViewOutline(viewing);
+    // 从外圈格子到中央地块的虚线，让玩家看出两者的对应关系
+    for (const lot of lots) {
+      const link = links.get(lot.tileId);
+      if (!link) continue;
+      const a = project(layout, gridOf(lot.index).gx, gridOf(lot.index).gy);
+      const b = project(layout, lot.gx, lot.gy);
+      ctx.save();
+      ctx.globalAlpha = link.alpha * 0.85;
+      ctx.setLineDash([layout.th * 0.12, layout.th * 0.1]);
+      ctx.strokeStyle = link.color;
+      ctx.lineWidth = Math.max(2, layout.th * 0.05);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.restore();
+    }
     drawCenterLabels(state, dice);
     if (state && tokens) drawTokens(state, tokens, currentPlayerId, board);
     for (const f of floaters) drawFloater(f);

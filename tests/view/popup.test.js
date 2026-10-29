@@ -98,14 +98,38 @@ describe('结果卡播放时机', () => {
     expect(a.popup).toBeNull();
   });
 
-  it('播放倍速同样缩短停留时间', () => {
+  it('4× 速度下结果卡仍停留完整时长，不随倍速缩短', () => {
     const a = createAnimator({ state, describePopup });
     a.setSpeed(4);
     a.handle(bought, 'propertyBought');
     a.tick(0);
     a.tick(POPUP_MS / 4);
+    expect(a.popup).not.toBeNull();
+    expect(a.busy).toBe(true);
+    a.tick(POPUP_MS);
     expect(a.popup).toBeNull();
-    expect(a.busy).toBe(false);
+  });
+
+  it('玩家点掉结果卡：卡片立即消失，被暂停的事件马上开始播放', () => {
+    const events = [];
+    const a = createAnimator({ state, describePopup, onEvent: (type) => events.push(type) });
+    a.handle(bought, 'propertyBought');
+    a.handle(next, 'cashGained');
+    a.tick(0);
+    expect(a.dismissPopup()).toBe(true);
+    expect(a.popup).toBeNull();
+    a.tick(10);
+    expect(events).toEqual(['propertyBought', 'cashGained']);
+    expect(a.dismissPopup()).toBe(false); // 没有结果卡时什么也不做
+  });
+
+  it('观战提示条不能点掉（它本来就不暂停对局）', () => {
+    const a = createAnimator({ state, describePopup });
+    a.setCalm(true);
+    a.handle(bought, 'propertyBought');
+    a.tick(0);
+    expect(a.dismissPopup()).toBe(false);
+    expect(a.popup).toMatchObject({ toast: true });
   });
 
   it('观战模式：小提示条不阻塞后续事件', () => {

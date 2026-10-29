@@ -9,6 +9,10 @@ import { contrastRatio } from '../../src/view/render/theme.js';
 const css = readFileSync(new URL('../../src/view/ui/style.css', import.meta.url), 'utf8');
 const rootBlock = css.slice(css.indexOf(':root {'), css.indexOf('}', css.indexOf(':root {')));
 const vars = Object.fromEntries([...rootBlock.matchAll(/--([\w-]+):\s*(#[0-9a-fA-F]{6})\b/g)].map((m) => [m[1], m[2]]));
+// 暗角最深处：木纹深色端再叠一层黑色（--vignette 为不透明度）
+const vignette = Number(rootBlock.match(/--vignette:\s*([\d.]+)/)[1]);
+const darken = (hex, a) => `#${[1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * (1 - a)).toString(16).padStart(2, '0')).join('')}`;
+vars['table-vignetted'] = darken(vars['table-dark'], vignette);
 const v = (name) => {
   expect(vars[name], `缺少颜色变量 --${name}`).toMatch(/^#/);
   return vars[name];
@@ -28,6 +32,8 @@ describe('页面配色对比度', () => {
     ['桌面提示 on 木纹深处', 'on-table-muted', 'table-dark', 4.5],
     ['桌面标题 on 木纹亮处', 'on-table', 'table-light', 4.5],
     ['焦点环 on 木纹深处', 'focus', 'table-dark', 3],
+    ['桌面标题 on 暗角最深处', 'on-table', 'table-vignetted', 4.5],
+    ['桌面提示 on 暗角最深处', 'on-table-muted', 'table-vignetted', 4.5],
     ['焦点环 on 纸', 'focus', 'panel', 3],
   ])('%s ≥ %s', (_, fg, bg, min) => {
     expect(contrastRatio(v(fg), v(bg))).toBeGreaterThanOrEqual(min);

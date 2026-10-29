@@ -6,8 +6,8 @@
   --table-dark: #b3855a;
   --table-light: #c49668;
   /* 直接写在桌面上的文字（标题、提示） */
-  --on-table: #2b1d10;
-  --on-table-muted: #33230f;
+  --on-table: #1f140a;
+  --on-table-muted: #24180b;
   --bg: var(--table);
   --panel: #fbf6ea;
   --panel-2: #f1e8d4;
@@ -26,10 +26,16 @@
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 10px;
-  /* 木纹桌面：细直纹 + 柔和的明暗变化，全部用渐变画；固定在窗口上，吸顶元素也能无缝衔接 */
+  /*
+   * 木纹桌面：稀疏、低对比的直纹 + 四周轻微暗角，让视线落在棋盘上；全部用渐变画。
+   * 固定在窗口上，吸顶的工具栏也能无缝衔接。暗角最深处会让桌面变暗 --vignette，
+   * 写在桌面上的文字按变暗后的颜色校对对比度（见 contrast.test.js）。
+   */
+  --vignette: 0.06;
   --wood:
-    repeating-linear-gradient(92deg, rgb(0 0 0 / 0.035) 0 2px, transparent 2px 9px) fixed,
-    repeating-linear-gradient(88deg, rgb(255 255 255 / 0.04) 0 1px, transparent 1px 23px) fixed,
+    radial-gradient(ellipse 75% 70% at 45% 45%, transparent 60%, rgb(0 0 0 / var(--vignette))) fixed,
+    repeating-linear-gradient(92deg, rgb(0 0 0 / 0.012) 0 2px, transparent 2px 15px) fixed,
+    repeating-linear-gradient(88deg, rgb(255 255 255 / 0.015) 0 1px, transparent 1px 31px) fixed,
     linear-gradient(180deg, var(--table-light), var(--table) 40%, var(--table-dark)) fixed var(--table);
   /* 纸质面板放在桌面上的投影 */
   --paper-shadow: 0 1px 0 rgb(255 255 255 / 0.6) inset, 0 2px 6px rgb(60 35 10 / 0.25);
@@ -277,6 +283,8 @@ select:focus-visible {
 
 #board {
   display: block;
+  /* 棋盘像摆在桌面上：沿棋盘轮廓（画布透明处不投影）落一层柔和的大投影 */
+  filter: drop-shadow(0 14px 22px rgb(60 35 10 / 0.35));
   border-radius: var(--radius-lg);
   background: transparent;
   /* 触屏点选不触发双击缩放 */
@@ -702,4 +710,29 @@ select:focus-visible {
 .trade-dialog,
 .toolbar .btn {
   box-shadow: var(--paper-shadow);
+}
+
+/* ---------- 游戏标识 ---------- */
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+}
+
+.brand-mark {
+  display: inline-flex;
+  flex: none;
+}
+
+.brand-name {
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.brand-suffix {
+  font-size: 0.75em;
+  font-weight: 600;
+  color: var(--muted);
 }

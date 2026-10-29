@@ -54,7 +54,7 @@ export function parseSave(text) {
   } catch {
     return fail('存档不是有效的 JSON');
   }
-  if (!data || typeof data !== 'object' || data.format !== SAVE_FORMAT) return fail('这不是大富翁的存档');
+  if (!data || typeof data !== 'object' || data.format !== SAVE_FORMAT) return fail('这不是城市大富翁的存档');
   if (data.version !== SAVE_VERSION) return fail(`存档版本 ${data.version} 不兼容（当前版本 ${SAVE_VERSION}）`);
   if (!data.state || typeof data.state !== 'object' || Array.isArray(data.state)) return fail('存档缺少对局数据');
   if (checksum(JSON.stringify(data.state)) !== data.checksum) return fail('存档校验失败，可能已损坏或被修改');
