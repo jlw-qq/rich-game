@@ -10,13 +10,22 @@ import { RULES } from './data/config/rules.js';
 import { DEFAULT_MODE, MODES, rulesFor } from './data/config/modes.js';
 import { CARDS } from './data/config/cards.js';
 import { createSaveStore, MAX_SAVE_LENGTH } from './data/save/saveFormat.js';
+import { createRecordStore } from './data/save/challengeRecords.js';
 import { createBoard } from './logic/core/board.js';
 import { createEventBus } from './logic/core/eventBus.js';
 import { createInitialState, validatePlayerSetup } from './logic/core/gameState.js';
 import { createGame } from './logic/core/game.js';
 import { performAction } from './logic/core/actions.js';
 import { checkLoadedState, exportSave, importSave } from './logic/core/saveGame.js';
-import { computeRanking } from './logic/core/results.js';
+import { challengeScore, computeRanking, isBetterScore, isChallengeScore } from './logic/core/results.js';
+import {
+  challengePlayers,
+  dailyChallenge,
+  decodeChallenge,
+  encodeChallenge,
+  localDateKey,
+  seatKinds,
+} from './logic/systems/challenge.js';
 import { PHASES } from './logic/core/turnMachine.js';
 import { createAiDriver } from './logic/ai/driver.js';
 import { createBoardRenderer } from './view/render/boardRenderer.js';
@@ -44,7 +53,7 @@ const saveCtx = { board, rules: RULES, cards: CARDS };
 const canvas = /** @type {HTMLCanvasElement} */ ($('board'));
 const renderer = createBoardRenderer(canvas);
 const sound = createSound();
-const results = createResults($('results'));
+const results = createResults($('results'), { onReplay: (code) => startCode(code) });
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 /** localStorage 在隐私模式或沙箱里可能不可用，访问本身就会抛错 */
@@ -56,6 +65,29 @@ function getStorage() {
   }
 }
 const saveStore = createSaveStore(getStorage());
+const records = createRecordStore(getStorage());
+
+/** 本机记录的某个挑战码最好成绩，记录损坏时当作没有 */
+function bestScore(code) {
+  const r = records.get(code);
+  return isChallengeScore(r) ? r : null;
+}
+
+/**
+ * 终局时的挑战信息。每局只算一次并只写一次记录，之后重绘结算表都用这次的结果。
+ * @returns {object | null}
+ */
+function challengeView(current) {
+  const { state } = current;
+  if (!state.challenge) return null;
+  if (current.challengeView) return current.challengeView;
+  const score = challengeScore({ state, board });
+  const best = bestScore(state.challenge.code);
+  const newBest = score !== null && isBetterScore(score, best);
+  if (newBest) records.set(state.challenge.code, score);
+  current.challengeView = { ...state.challenge, score, best, newBest };
+  return current.challengeView;
+}
 
 /** 事件日志的展开状态只是本机偏好，读写失败时默认收起 */
 const LOG_EXPANDED_KEY = 'rich-game:log-expanded';
@@ -237,7 +269,7 @@ function renderPanel() {
   const { state, game, animator, driver } = session;
   // AI 回合中人类按钮全部禁用
   panel.render({ state, game, board, busy: animator.busy || driver.isAiTurn(), rules: session.rules });
-  if (state.phase === PHASES.GAME_OVER) results.show({ rows: computeRanking({ state, board }), state });
+  if (state.phase === PHASES.GAME_OVER) results.show({ rows: computeRanking({ state, board }), state, challenge: challengeView(session) });
   else results.hide();
   if (!animator.busy) autosave();
   scheduleAi();
@@ -287,7 +319,7 @@ function startSession(state, intro) {
   bus.on('*', animator.handle);
   const driver = createAiDriver({ game, state, board, rules, cards: CARDS });
 
-  session = { state, game, animator, driver, rules, aiTimer: null };
+  session = { state, game, animator, driver, rules, aiTimer: null, challengeView: null };
   seenLandings = 0;
   selection.clear();
   selection.setHover(null);
@@ -303,21 +335,47 @@ function startSession(state, intro) {
 }
 
 /**
+ * 每一局都带挑战码，结算时可以分享给别人玩同一局。
  * @param {{ name: string, isAI: boolean, aiLevel?: string }[]} players
  * @param {string} [mode]
+ * @param {{ seed?: number, daily?: string | null }} [options] 不给 seed 时随机；daily 为每日挑战的日期
  */
-function startGame(players, mode = DEFAULT_MODE) {
-  const seed = (Math.random() * 2 ** 32) >>> 0;
+function startGame(players, mode = DEFAULT_MODE, { seed = (Math.random() * 2 ** 32) >>> 0, daily = null } = {}) {
   const rules = rulesFor(mode, players.length);
-  const state = createInitialState({ board, rules, cards: CARDS, players, seed, mode });
+  const code = encodeChallenge({ mode, kinds: seatKinds(players), seed });
+  const state = createInitialState({ board, rules, cards: CARDS, players, seed, mode, challenge: { code, daily } });
   const lines = [
     `${MODES[mode].name}开始：${state.players.map((p) => p.name).join('、')}。每人初始资金 ${rules.startingCash.toLocaleString('zh-CN')} 元`,
+    daily ? `今日挑战 · 挑战码 ${code}` : `挑战码 ${code}`,
   ];
   if (rules.startingProperties > 0) lines.push(`开局每人随机分到 ${rules.startingProperties} 块地`);
   const ends = [`打满 ${rules.maxRounds} 轮`, '只剩一人'];
   if (rules.goalNetWorth > 0) ends.unshift(`有人总资产达到 ${rules.goalNetWorth.toLocaleString('zh-CN')} 元`);
   lines.push(`结束条件：${ends.join('、')}`, `第 1 轮 · ${state.players[0].name} 的回合`);
   startSession(state, lines);
+}
+
+/** 按挑战配置开局 */
+function startChallenge({ mode, kinds, seed }, daily = null) {
+  startGame(challengePlayers(kinds), mode, { seed, daily });
+}
+
+function startDaily() {
+  const today = localDateKey(new Date());
+  startChallenge(dailyChallenge(today), today);
+}
+
+/**
+ * 用挑战码开局。今天的每日挑战码也算作每日挑战。
+ * @param {string} text
+ * @returns {string | null} 错误信息
+ */
+function startCode(text) {
+  const r = decodeChallenge(text);
+  if (!r.ok) return r.error;
+  const today = localDateKey(new Date());
+  startChallenge(r.config, encodeChallenge(dailyChallenge(today)) === r.code ? today : null);
+  return null;
 }
 
 /** @param {object} state 已通过校验的存档状态 */
@@ -431,6 +489,12 @@ const setup = createSetup({
   validate: (players) => validatePlayerSetup(players, RULES),
   onStart: startGame,
   onImport: importFile,
+  daily: () => {
+    const dateKey = localDateKey(new Date());
+    return { dateKey, best: bestScore(encodeChallenge(dailyChallenge(dateKey))) };
+  },
+  onDaily: startDaily,
+  onCode: startCode,
 });
 
 /** 显示开局界面；有可用的自动存档时提供“继续上一局” */

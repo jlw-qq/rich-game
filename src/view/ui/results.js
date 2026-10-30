@@ -3,18 +3,77 @@
  */
 import { el } from './dom.js';
 import { brandHeading } from './brandHeading.js';
-import { money } from './format.js';
+import { dateLabel, money, scoreText, shareText } from './format.js';
 import { PLAYER_COLORS } from '../render/theme.js';
 
 /**
- * @param {HTMLElement} root
+ * 复制到剪贴板。剪贴板接口在非安全上下文或被拒绝时不可用，返回 false，由调用方提示手动复制。
+ * @param {string} text
  */
-export function createResults(root) {
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * @param {{ code: string, daily: string | null, score: object | null, best: object | null, newBest: boolean }} c
+ * @param {(code: string) => void} onReplay
+ */
+function challengeSection(c, onReplay) {
+  const status = el('span', { class: 'muted', role: 'status' });
+  const copyButton = (label, text) =>
+    el(
+      'button',
+      {
+        type: 'button',
+        class: 'btn',
+        onclick: async () => {
+          status.textContent = (await copyText(text)) ? '已复制' : '复制失败，请手动选中文字复制';
+        },
+      },
+      label,
+    );
+  const share = c.score && shareText(c);
+  return el(
+    'div',
+    { class: 'results-challenge' },
+    el('h3', {}, c.daily ? `${dateLabel(c.daily)}每日挑战` : '本局挑战码'),
+    el('p', {}, el('code', { class: 'challenge-code' }, c.code), el('span', { class: 'muted' }, ' 别人输入这个码，就能玩到同样的开局和骰子')),
+    c.score &&
+      el(
+        'p',
+        {},
+        `你的成绩：${scoreText(c.score)}`,
+        c.newBest ? el('strong', { class: 'results-best' }, ' · 新纪录') : c.best && el('span', { class: 'muted' }, `（本机最好：${scoreText(c.best)}）`),
+      ),
+    share && el('pre', { class: 'challenge-share' }, share),
+    el(
+      'div',
+      { class: 'actions' },
+      copyButton('复制挑战码', c.code),
+      share && copyButton('复制成绩', share),
+      el('button', { type: 'button', class: 'btn', onclick: () => onReplay(c.code) }, '同一挑战再来一局'),
+      status,
+    ),
+  );
+}
+
+/**
+ * @param {HTMLElement} root
+ * @param {{ onReplay?: (code: string) => void }} [options] onReplay：用同一个挑战码重开
+ */
+export function createResults(root, { onReplay = () => {} } = {}) {
   /**
    * @param {{ rows: ReturnType<typeof import('../../logic/core/results.js').computeRanking>,
-   *           state: object }} view
+   *           state: object,
+   *           challenge?: { code: string, daily: string | null, score: object | null, best: object | null, newBest: boolean } | null }} view
+   *   challenge：best 是本局之前的本机最好成绩，newBest 表示本局刷新了纪录
    */
-  function show({ rows, state }) {
+  function show({ rows, state, challenge = null }) {
     const seatOf = (id) => state.players.findIndex((p) => p.id === id);
     const reason = {
       roundLimit: `打满 ${state.round} 轮回合上限，按总资产排名`,
@@ -53,6 +112,7 @@ export function createResults(root) {
           ),
         ),
       ),
+      challenge && challengeSection(challenge, onReplay),
     );
     root.hidden = false;
   }

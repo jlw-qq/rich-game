@@ -149,3 +149,21 @@ export function formatEvent(type, p, { state, board, cards }) {
       return null;
   }
 }
+
+/** 挑战成绩一行字：第 2/4 名 · 总资产 23,400 元 · 25 轮 */
+export function scoreText(score) {
+  const worth = score.bankrupt ? '已破产' : `总资产 ${money(score.netWorth)}`;
+  return `第 ${score.rank}/${score.players} 名 · ${worth} · ${score.round} 轮`;
+}
+
+/** 每日挑战日期 2026-10-30 → 10 月 30 日 */
+export function dateLabel(dateKey) {
+  const [, m, d] = dateKey.split('-').map(Number);
+  return `${m} 月 ${d} 日`;
+}
+
+/** 发给别人比较的成绩文字（本地生成，别人无法核实，只是方便分享） */
+export function shareText({ code, daily, score }) {
+  const title = daily ? `城市大富翁 · ${dateLabel(daily)}每日挑战` : '城市大富翁 · 挑战';
+  return `${title}\n挑战码 ${code}\n我的成绩：${scoreText(score)}`;
+}

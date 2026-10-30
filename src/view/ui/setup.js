@@ -5,6 +5,8 @@ import { el } from './dom.js';
 import { PLAYER_COLORS } from '../render/theme.js';
 import { brandHeading } from './brandHeading.js';
 import { DEFAULT_MODE, MODES } from '../../data/config/modes.js';
+import { DAILY_CHALLENGE } from '../../data/config/challenge.js';
+import { dateLabel, scoreText } from './format.js';
 
 const DEFAULT_NAMES = ['小红', '小蓝', '小黄', '小绿', '小紫'];
 
@@ -22,9 +24,12 @@ const KINDS = {
  *   validate: (players: object[]) => string[],
  *   onStart: (players: { name: string, isAI: boolean, aiLevel?: string }[], mode: string) => void,
  *   onImport: (file: File) => Promise<string | null>,
- * }} options onImport 返回错误信息，成功返回 null
+ *   daily: () => { dateKey: string, best: object | null },
+ *   onDaily: () => void,
+ *   onCode: (text: string) => string | null,
+ * }} options onImport、onCode 返回错误信息，成功返回 null；daily 给出今天的日期和本机最好成绩
  */
-export function createSetup({ root, rules, validate, onStart, onImport }) {
+export function createSetup({ root, rules, validate, onStart, onImport, daily, onDaily, onCode }) {
   let count = 2;
   let resume = null;
   let mode = DEFAULT_MODE;
@@ -32,8 +37,37 @@ export function createSetup({ root, rules, validate, onStart, onImport }) {
   // 默认第 1 位是人类，其余是普通 AI
   const kinds = DEFAULT_NAMES.map((_, i) => (i === 0 ? 'human' : 'normal'));
 
+  /** 每日挑战的阵容说明：短局 · 你和 3 个普通 AI */
+  const dailyLineup = (() => {
+    const ai = DAILY_CHALLENGE.kinds.filter((k) => k !== 'human');
+    const levels = [...new Set(ai)].map((k) => KINDS[k].label.replace('AI · ', '')).join('/');
+    return `${MODES[DAILY_CHALLENGE.mode].name} · 你和 ${ai.length} 个${levels} AI`;
+  })();
+
   function render() {
     const errorBox = el('ul', { class: 'setup-errors', role: 'alert' });
+    const today = daily();
+    const codeInput = el('input', {
+      id: 'setup-code',
+      type: 'text',
+      maxlength: 40,
+      placeholder: 'CR-XXXX-XXXX-XXXX',
+      autocomplete: 'off',
+      spellcheck: 'false',
+      // 在挑战码框里按回车是开挑战，不是提交下面的新游戏表单
+      onkeydown: (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        startCode();
+      },
+    });
+    const startCode = () => {
+      const error = onCode(codeInput.value);
+      if (error) {
+        errorBox.replaceChildren(el('li', {}, error));
+        codeInput.focus();
+      }
+    };
 
     const rows = Array.from({ length: count }, (_, i) =>
       el(
@@ -108,6 +142,29 @@ export function createSetup({ root, rules, validate, onStart, onImport }) {
             el('button', { type: 'button', class: 'btn btn-danger', onclick: resume.onDiscard }, '删除存档'),
           ),
         ),
+      el(
+        'fieldset',
+        { class: 'setup-challenge' },
+        el('legend', {}, '挑战'),
+        el(
+          'div',
+          { class: 'setup-daily' },
+          el('button', { type: 'button', id: 'setup-daily', class: 'btn btn-primary', onclick: onDaily }, '今日挑战'),
+          el(
+            'span',
+            { class: 'setup-mode-text' },
+            el('strong', {}, `${dateLabel(today.dateKey)} · ${dailyLineup}`),
+            el('span', { class: 'muted' }, today.best ? `本机最好：${scoreText(today.best)}` : '所有人今天玩的是同一局，可以重玩，只记最好成绩'),
+          ),
+        ),
+        el(
+          'div',
+          { class: 'setup-row' },
+          el('label', { for: 'setup-code' }, '挑战码'),
+          codeInput,
+          el('button', { type: 'button', class: 'btn', onclick: startCode }, '开始'),
+        ),
+      ),
       el(
         'fieldset',
         { class: 'setup-modes' },

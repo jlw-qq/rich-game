@@ -32,3 +32,32 @@ export function computeRanking(ctx) {
   });
   return rows.map(({ seat, ...row }, i) => ({ rank: i + 1, ...row }));
 }
+
+/**
+ * 挑战成绩：第一位人类玩家的名次、总资产和结束轮数。全 AI 对局没有成绩，返回 null。
+ * @param {{ state: object, board: object }} ctx
+ * @returns {{ rank: number, players: number, bankrupt: boolean, netWorth: number, round: number } | null}
+ */
+export function challengeScore(ctx) {
+  const human = ctx.state.players.find((p) => !p.isAI);
+  if (!human) return null;
+  const row = computeRanking(ctx).find((r) => r.playerId === human.id);
+  return { rank: row.rank, players: ctx.state.players.length, bankrupt: row.bankrupt, netWorth: row.netWorth, round: ctx.state.round };
+}
+
+/** 读回来的本地记录可能被改过，用之前先确认形状 */
+export function isChallengeScore(v) {
+  const posInt = (n) => Number.isInteger(n) && n >= 1;
+  return (
+    v !== null && typeof v === 'object' && posInt(v.rank) && posInt(v.players) && v.rank <= v.players &&
+    typeof v.bankrupt === 'boolean' && Number.isInteger(v.netWorth) && v.netWorth >= 0 && posInt(v.round)
+  );
+}
+
+/** a 是否比 b 好：名次靠前优先，其次总资产高，再其次用的轮数少。b 为空时 a 总是更好 */
+export function isBetterScore(a, b) {
+  if (!b) return true;
+  if (a.rank !== b.rank) return a.rank < b.rank;
+  if (a.netWorth !== b.netWorth) return a.netWorth > b.netWorth;
+  return a.round < b.round;
+}

@@ -6,13 +6,15 @@ import { createRng } from '../utils/rng.js';
 import { buildDecks, validateCards } from '../systems/cards.js';
 import { MODES } from '../../data/config/modes.js';
 import { REPLACED_CARD_IDS } from '../../data/config/cards.js';
+import { challengeErrors } from '../systems/challenge.js';
 
 /**
  * 版本 2：新增交易（pendingTrade、tradesThisTurn）
  * 版本 3：新增对局模式（mode），规则按模式取，见 data/config/modes.js
  * 版本 4：新增城市事件卡（pendingChoice、eventRngState），部分旧卡被替换
+ * 版本 5：新增挑战码（challenge），见 systems/challenge.js
  */
-export const STATE_VERSION = 4;
+export const STATE_VERSION = 5;
 export const MAX_NAME_LENGTH = 12;
 /** AI 难度 */
 export const AI_LEVELS = ['easy', 'normal'];
@@ -64,12 +66,14 @@ export function validatePlayerSetup(players, rules) {
  *   players: { name: string, isAI?: boolean }[],
  *   seed: number,
  *   mode?: string,
- * }} options rules 须是该模式的规则（rulesFor(mode)）
+ *   challenge?: { code: string, daily: string | null } | null,
+ * }} options rules 须是该模式的规则（rulesFor(mode)）；challenge 的挑战码必须正好描述这一局（模式、座位、种子）
  */
-export function createInitialState({ board, rules, players, seed, cards = [], mode = 'classic' }) {
+export function createInitialState({ board, rules, players, seed, cards = [], mode = 'classic', challenge = null }) {
   const errors = validatePlayerSetup(players, rules);
   if (!Number.isInteger(seed)) errors.push(`seed 必须是整数，实际为 ${seed}`);
   if (!Object.hasOwn(MODES, mode)) errors.push(`未知对局模式: ${mode}`);
+  if (errors.length === 0) errors.push(...challengeErrors(challenge, { mode, players, seed }));
   errors.push(...validateCards(cards, board));
   if (errors.length > 0) throw new GameSetupError(errors);
 
@@ -86,6 +90,8 @@ export function createInitialState({ board, rules, players, seed, cards = [], mo
     version: STATE_VERSION,
     /** 对局模式，见 data/config/modes.js */
     mode,
+    /** 挑战码 { code, daily }：daily 为每日挑战的日期 YYYY-MM-DD，其他对局为 null；旧存档升级上来的对局没有挑战码，为 null */
+    challenge: challenge && { code: challenge.code, daily: challenge.daily },
     phase: PHASES.AWAIT_ROLL,
     /** 累计行动回合数（每位玩家行动一次算一回合），从 1 开始 */
     turn: 1,
@@ -149,6 +155,8 @@ export function migrateState(state) {
     const decks = s.decks && typeof s.decks === 'object' ? Object.fromEntries(Object.entries(s.decks).map(([k, v]) => [k, Array.isArray(v) ? v.map(swap) : v])) : s.decks;
     s = { ...s, version: 4, decks, pendingChoice: null, eventRngState: eventRngSeed(s.rngState >>> 0) };
   }
+  // 旧对局的种子已经无从得知，不能补挑战码
+  if (s.version === 4) s = { ...s, version: 5, challenge: null };
   return s;
 }
 

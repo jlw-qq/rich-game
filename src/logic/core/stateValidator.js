@@ -6,6 +6,7 @@ import { PHASES } from './turnMachine.js';
 import { AI_LEVELS, MAX_NAME_LENGTH, STATE_VERSION } from './gameState.js';
 import { prepareTrade } from '../systems/trade.js';
 import { MODES, rulesFor } from '../../data/config/modes.js';
+import { challengeErrors } from '../systems/challenge.js';
 
 const isInt = (v) => Number.isInteger(v);
 const isNonNegInt = (v) => isInt(v) && v >= 0;
@@ -149,6 +150,9 @@ export function validateState(state, { board, rules: baseRules, cards }) {
   } else if (pc !== null) {
     err('非选择阶段存在待选的城市事件');
   }
+
+  // ---- 挑战码：存档里看不到原始种子，只核对模式和座位
+  errors.push(...challengeErrors(state.challenge, { mode: state.mode, players }));
 
   // ---- 终局
   if (state.phase === PHASES.GAME_OVER) {
