@@ -27,13 +27,17 @@ const KINDS = {
  *   daily: () => { dateKey: string, best: object | null },
  *   onDaily: () => void,
  *   onCode: (text: string) => string | null,
- * }} options onImport、onCode 返回错误信息，成功返回 null；daily 给出今天的日期和本机最好成绩
+ *   onCreateRoom: (name: string) => Promise<string | null>,
+ *   onJoinRoom: (code: string, name: string) => Promise<string | null>,
+ * }} options onImport、onCode、onCreateRoom、onJoinRoom 返回错误信息，成功返回 null；daily 给出今天的日期和本机最好成绩
  */
-export function createSetup({ root, rules, validate, onStart, onImport, daily, onDaily, onCode }) {
+export function createSetup({ root, rules, validate, onStart, onImport, daily, onDaily, onCode, onCreateRoom, onJoinRoom }) {
   let count = 2;
   let resume = null;
   let mode = DEFAULT_MODE;
   const names = [...DEFAULT_NAMES];
+  /** 联网时用的名字，默认取 1 号玩家的名字 */
+  let onlineName = '';
   // 默认第 1 位是人类，其余是普通 AI
   const kinds = DEFAULT_NAMES.map((_, i) => (i === 0 ? 'human' : 'normal'));
 
@@ -61,6 +65,35 @@ export function createSetup({ root, rules, validate, onStart, onImport, daily, o
         startCode();
       },
     });
+    const roomInput = el('input', {
+      id: 'setup-room',
+      type: 'text',
+      maxlength: 8,
+      placeholder: '4 位房间码',
+      autocomplete: 'off',
+      spellcheck: 'false',
+      onkeydown: (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        online(() => onJoinRoom(roomInput.value, nameInput.value));
+      },
+    });
+    const nameInput = el('input', {
+      id: 'setup-online-name',
+      type: 'text',
+      maxlength: 12,
+      value: onlineName || names[0],
+      autocomplete: 'off',
+      oninput: (e) => (onlineName = e.target.value),
+    });
+    /** 联网按钮在等服务器回应时禁用，避免重复点 */
+    const online = async (run) => {
+      const buttons = [...root.querySelectorAll('.setup-online button')];
+      buttons.forEach((b) => (b.disabled = true));
+      const error = await run();
+      buttons.forEach((b) => (b.disabled = false));
+      if (error) errorBox.replaceChildren(el('li', {}, error));
+    };
     const startCode = () => {
       const error = onCode(codeInput.value);
       if (error) {
@@ -164,6 +197,20 @@ export function createSetup({ root, rules, validate, onStart, onImport, daily, o
           codeInput,
           el('button', { type: 'button', class: 'btn', onclick: startCode }, '开始'),
         ),
+      ),
+      el(
+        'fieldset',
+        { class: 'setup-challenge setup-online' },
+        el('legend', {}, '联网对战（局域网）'),
+        el('div', { class: 'setup-row' }, el('label', { for: 'setup-online-name' }, '你的名字'), nameInput),
+        el(
+          'div',
+          { class: 'setup-row' },
+          el('label', { for: 'setup-room' }, '房间码'),
+          roomInput,
+          el('button', { type: 'button', class: 'btn', onclick: () => online(() => onJoinRoom(roomInput.value, nameInput.value)) }, '加入'),
+        ),
+        el('button', { type: 'button', class: 'btn', onclick: () => online(() => onCreateRoom(nameInput.value)) }, '创建房间'),
       ),
       el(
         'fieldset',

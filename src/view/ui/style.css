@@ -806,6 +806,13 @@ select:focus-visible {
   flex: none;
 }
 
+.setup-row #setup-room,
+.setup-row #setup-online-name {
+  width: 0;
+  min-width: 0;
+}
+
+.setup-row #setup-room,
 .setup-row #setup-code {
   width: 0;
   min-width: 0;
@@ -855,4 +862,68 @@ select:focus-visible {
 
 .results-best {
   color: var(--text);
+}
+
+/* ---------- 联网房间 ---------- */
+
+.lobby {
+  max-width: 440px;
+}
+
+.lobby-code {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.lobby-code strong {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 1.6rem;
+  letter-spacing: 0.15em;
+}
+
+.lobby-seats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lobby-seat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 2.2em;
+}
+
+.lobby-seat .setup-kind {
+  font: inherit;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+}
+
+.lobby-seat-closed .player-dot {
+  opacity: 0.35;
+}
+
+.lobby-name {
+  font-weight: 600;
+}
+
+.lobby-notice {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--panel-2);
+}
+
+.lobby .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }

@@ -44,6 +44,8 @@ import { bindBoardPicker, createSelection } from './view/ui/boardPicker.js';
 import { createViewport } from './view/render/viewport.js';
 import { money } from './view/ui/format.js';
 import { createCardPanel } from './view/ui/cardPanel.js';
+import { createLobby } from './view/ui/lobby.js';
+import { connect } from './view/net/client.js';
 
 const $ = (id) => document.getElementById(id);
 $('favicon').setAttribute('href', faviconHref());
@@ -495,7 +497,68 @@ const setup = createSetup({
   },
   onDaily: startDaily,
   onCode: startCode,
+  onCreateRoom: (name) => request({ t: 'create', name }),
+  onJoinRoom: (code, name) => request({ t: 'join', code, name }),
 });
+
+// ---------- 联网房间 ----------
+
+/** 当前的联网连接：conn 为连接，waiting 为等待服务器回应的建房/加入请求 */
+let net = null;
+
+const lobby = createLobby({ root: $('lobby'), send: (msg) => net?.conn.send(msg), onLeave: leaveRoom });
+
+/** 收到服务器消息 */
+function onNetMessage(msg) {
+  const waiting = net?.waiting;
+  if (net) net.waiting = null;
+  if (msg.t === 'room') {
+    waiting?.(null);
+    setup.hide();
+    lobby.setRoom(msg.room);
+  } else if (msg.t === 'error') {
+    if (waiting) waiting(String(msg.message));
+    else lobby.showError(String(msg.message));
+  } else if (msg.t === 'started') {
+    lobby.showNotice('所有人已就位，对局已在服务器上开始。联网下棋的操作在下一步接入。');
+  }
+}
+
+function onNetClose(reason) {
+  const waiting = net?.waiting;
+  net = null;
+  if (waiting) return waiting(reason);
+  lobby.hide();
+  showSetup({ message: reason });
+}
+
+/**
+ * 发出建房或加入请求，等服务器回应。
+ * @returns {Promise<string | null>} 错误信息
+ */
+async function request(msg) {
+  if (!net) {
+    try {
+      net = { conn: await connect({ onMessage: onNetMessage, onClose: onNetClose }), waiting: null };
+    } catch (err) {
+      return err.message;
+    }
+  }
+  return new Promise((resolve) => {
+    net.waiting = resolve;
+    net.conn.send(msg);
+  });
+}
+
+function leaveRoom() {
+  if (net) {
+    net.conn.send({ t: 'leave' });
+    net.conn.close();
+    net = null;
+  }
+  lobby.hide();
+  showSetup();
+}
 
 /** 显示开局界面；有可用的自动存档时提供“继续上一局” */
 function showSetup({ message = '' } = {}) {
