@@ -1,5 +1,8 @@
 /**
- * 表现层：开局设置表单。校验交给逻辑层 validatePlayerSetup，这里只负责收集输入和显示错误。
+ * 表现层：开局界面。校验交给逻辑层 validatePlayerSetup，这里只负责收集输入和显示错误。
+ *
+ * 第一屏只讲一件事：10 分钟和朋友争夺城市地产。下面三个入口（开短局 / 和朋友联机 / 今日挑战），
+ * 选中哪个就展开哪个的设置；对局模式、导入存档这些不常用的收在「更多设置」里。
  */
 import { el } from './dom.js';
 import { PLAYER_COLORS } from '../render/theme.js';
@@ -32,7 +35,12 @@ const KINDS = {
  * }} options onImport、onCode、onCreateRoom、onJoinRoom 返回错误信息，成功返回 null；daily 给出今天的日期和本机最好成绩
  */
 export function createSetup({ root, rules, validate, onStart, onImport, daily, onDaily, onCode, onCreateRoom, onJoinRoom }) {
-  let count = 2;
+  /** 当前展开的入口：local 开短局 / online 和朋友联机 / daily 今日挑战 */
+  let entry = 'local';
+  /** 「更多设置」是否展开（重绘时保持） */
+  let moreOpen = false;
+  // 默认你和 3 个普通 AI，和每日挑战的阵容一样
+  let count = 4;
   let resume = null;
   let mode = DEFAULT_MODE;
   const names = [...DEFAULT_NAMES];
@@ -144,74 +152,55 @@ export function createSetup({ root, rules, validate, onStart, onImport, daily, o
       }),
     );
 
-    const form = el(
-      'form',
-      {
-        class: 'setup-form',
-        onsubmit: (e) => {
-          e.preventDefault();
-          const players = names.slice(0, count).map((name, i) => {
-            const { isAI, aiLevel } = KINDS[kinds[i]];
-            return isAI ? { name, isAI, aiLevel } : { name, isAI };
-          });
-          const errors = validate(players);
-          if (errors.length > 0) {
-            errorBox.replaceChildren(...errors.map((msg) => el('li', {}, msg)));
-            return;
-          }
-          onStart(players, mode);
-        },
-      },
-      brandHeading('h1', 44),
-      resume &&
-        el(
-          'div',
-          { class: 'setup-resume', role: 'group', 'aria-label': '上一局' },
-          el('p', {}, resume.label),
-          el(
-            'div',
-            { class: 'actions' },
-            el('button', { type: 'button', class: 'btn btn-primary', onclick: resume.onResume }, '继续上一局'),
-            el('button', { type: 'button', class: 'btn btn-danger', onclick: resume.onDiscard }, '删除存档'),
-          ),
-        ),
+    const localPanel = [
+      el('div', { class: 'setup-row' }, el('label', { for: 'setup-count' }, '玩家人数'), countSelect),
+      rows,
+      el('p', { class: 'muted setup-hint' }, '人类玩家轮流在同一台电脑上操作。全部设为 AI 就是观战模式。'),
+      el('button', { type: 'submit', class: 'btn btn-primary btn-large' }, mode === DEFAULT_MODE ? '开始短局' : `开始${MODES[mode].name}`),
+    ];
+
+    const onlinePanel = [
+      el('div', { class: 'setup-row' }, el('label', { for: 'setup-online-name' }, '你的名字'), nameInput),
+      el('button', { type: 'button', class: 'btn btn-primary btn-large', onclick: () => online(() => onCreateRoom(nameInput.value)) }, '创建房间'),
       el(
-        'fieldset',
-        { class: 'setup-challenge' },
-        el('legend', {}, '挑战'),
-        el(
-          'div',
-          { class: 'setup-daily' },
-          el('button', { type: 'button', id: 'setup-daily', class: 'btn btn-primary', onclick: onDaily }, '今日挑战'),
-          el(
-            'span',
-            { class: 'setup-mode-text' },
-            el('strong', {}, `${dateLabel(today.dateKey)} · ${dailyLineup}`),
-            el('span', { class: 'muted' }, today.best ? `本机最好：${scoreText(today.best)}` : '所有人今天玩的是同一局，可以重玩，只记最好成绩'),
-          ),
-        ),
-        el(
-          'div',
-          { class: 'setup-row' },
-          el('label', { for: 'setup-code' }, '挑战码'),
-          codeInput,
-          el('button', { type: 'button', class: 'btn', onclick: startCode }, '开始'),
-        ),
+        'div',
+        { class: 'setup-row' },
+        el('label', { for: 'setup-room' }, '或者加入'),
+        roomInput,
+        el('button', { type: 'button', class: 'btn', onclick: () => online(() => onJoinRoom(roomInput.value, nameInput.value)) }, '加入'),
       ),
+      el('p', { class: 'muted setup-hint' }, '每人用自己的手机或电脑打开同一个服务器地址。房主创建房间后，把 4 位房间码告诉朋友。'),
+    ];
+
+    const dailyPanel = [
       el(
-        'fieldset',
-        { class: 'setup-challenge setup-online' },
-        el('legend', {}, '联网对战（局域网）'),
-        el('div', { class: 'setup-row' }, el('label', { for: 'setup-online-name' }, '你的名字'), nameInput),
-        el(
-          'div',
-          { class: 'setup-row' },
-          el('label', { for: 'setup-room' }, '房间码'),
-          roomInput,
-          el('button', { type: 'button', class: 'btn', onclick: () => online(() => onJoinRoom(roomInput.value, nameInput.value)) }, '加入'),
-        ),
-        el('button', { type: 'button', class: 'btn', onclick: () => online(() => onCreateRoom(nameInput.value)) }, '创建房间'),
+        'p',
+        { class: 'setup-mode-text' },
+        el('strong', {}, `${dateLabel(today.dateKey)} · ${dailyLineup}`),
+        el('span', { class: 'muted' }, today.best ? `本机最好：${scoreText(today.best)}` : '所有人今天玩的是同一局，可以重玩，只记最好成绩'),
       ),
+      el('button', { type: 'button', id: 'setup-daily', class: 'btn btn-primary btn-large', onclick: onDaily }, '开始今日挑战'),
+      el(
+        'div',
+        { class: 'setup-row' },
+        el('label', { for: 'setup-code' }, '挑战码'),
+        codeInput,
+        el('button', { type: 'button', class: 'btn', onclick: startCode }, '开始'),
+      ),
+      el('p', { class: 'muted setup-hint' }, '输入朋友发来的挑战码，能玩到和他完全一样的开局和骰子。'),
+    ];
+
+    const ENTRIES = [
+      { key: 'local', title: '开短局', note: '约 10 分钟 · 和 AI 或身边的人', panel: localPanel },
+      { key: 'online', title: '和朋友联机', note: '各用各的设备，进同一个房间', panel: onlinePanel },
+      { key: 'daily', title: '今日挑战', note: `${dateLabel(today.dateKey)} · 所有人同一局`, panel: dailyPanel },
+    ];
+    const current = ENTRIES.find((e) => e.key === entry);
+
+    const more = el(
+      'details',
+      { class: 'setup-more', open: moreOpen, ontoggle: (e) => (moreOpen = e.target.open) },
+      el('summary', {}, '更多设置'),
       el(
         'fieldset',
         { class: 'setup-modes' },
@@ -226,16 +215,15 @@ export function createSetup({ root, rules, validate, onStart, onImport, daily, o
               id: `setup-mode-${key}`,
               value: key,
               checked: mode === key,
-              onchange: () => (mode = key),
+              onchange: () => {
+                mode = key;
+                render();
+              },
             }),
             el('span', { class: 'setup-mode-text' }, el('strong', {}, m.name), el('span', { class: 'muted' }, m.blurb)),
           ),
         ),
       ),
-      el('div', { class: 'setup-row' }, el('label', { for: 'setup-count' }, '玩家人数'), countSelect),
-      rows,
-      errorBox,
-      el('button', { type: 'submit', class: 'btn btn-primary btn-large' }, '开始新游戏'),
       el(
         'div',
         { class: 'setup-row' },
@@ -253,7 +241,78 @@ export function createSetup({ root, rules, validate, onStart, onImport, daily, o
           },
         }),
       ),
-      el('p', { class: 'muted' }, '人类玩家轮流在同一台电脑上操作。全部设为 AI 就是观战模式。每回合结束自动存档。'),
+      el('p', { class: 'muted' }, '本机对局每回合结束自动存档，下次打开可以继续。'),
+    );
+
+    const form = el(
+      'form',
+      {
+        class: 'setup-form setup-home',
+        onsubmit: (e) => {
+          e.preventDefault();
+          // 只有「开短局」用表单提交（在名字框里按回车也会走到这里）
+          if (entry !== 'local') return;
+          const players = names.slice(0, count).map((name, i) => {
+            const { isAI, aiLevel } = KINDS[kinds[i]];
+            return isAI ? { name, isAI, aiLevel } : { name, isAI };
+          });
+          const errors = validate(players);
+          if (errors.length > 0) {
+            errorBox.replaceChildren(...errors.map((msg) => el('li', {}, msg)));
+            return;
+          }
+          onStart(players, mode);
+        },
+      },
+      el(
+        'div',
+        { class: 'setup-hero' },
+        brandHeading('h1', 44),
+        el('p', { class: 'setup-tagline' }, '10 分钟，和朋友争夺城市地产'),
+        el('p', { class: 'muted' }, '掷骰买地、盖楼收租、和对手讨价还价，最先攒到 30,000 元的人拿下这座城市。'),
+      ),
+      resume &&
+        el(
+          'div',
+          { class: 'setup-resume', role: 'group', 'aria-label': '上一局' },
+          el('p', {}, resume.label),
+          el(
+            'div',
+            { class: 'actions' },
+            el('button', { type: 'button', class: 'btn btn-primary', onclick: resume.onResume }, '继续上一局'),
+            el('button', { type: 'button', class: 'btn btn-danger', onclick: resume.onDiscard }, '删除存档'),
+          ),
+        ),
+      el(
+        'div',
+        { class: 'setup-entries', role: 'group', 'aria-label': '怎么玩' },
+        ENTRIES.map((e) =>
+          el(
+            'button',
+            {
+              type: 'button',
+              class: 'setup-entry',
+              'aria-pressed': String(e.key === entry),
+              'aria-controls': 'setup-panel',
+              onclick: () => {
+                if (entry === e.key) return;
+                entry = e.key;
+                render();
+                root.querySelector('.setup-entry[aria-pressed="true"]')?.focus();
+              },
+            },
+            el('strong', {}, e.title),
+            el('span', {}, e.note),
+          ),
+        ),
+      ),
+      el(
+        'div',
+        { class: `setup-panel${entry === 'online' ? ' setup-online' : ''}`, id: 'setup-panel', role: 'region', 'aria-label': current.title },
+        current.panel,
+      ),
+      errorBox,
+      more,
     );
 
     root.replaceChildren(form);
@@ -269,7 +328,7 @@ export function createSetup({ root, rules, validate, onStart, onImport, daily, o
       root.hidden = false;
       render();
       if (message) root.querySelector('.setup-errors')?.replaceChildren(el('li', {}, message));
-      (root.querySelector('.setup-resume .btn-primary') ?? root.querySelector('input'))?.focus();
+      (root.querySelector('.setup-resume .btn-primary') ?? root.querySelector('.setup-entry[aria-pressed="true"]'))?.focus();
     },
     hide() {
       root.hidden = true;
