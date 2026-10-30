@@ -1,103 +1,13 @@
 /**
- * 逻辑层：服务器上的联网对局。用假的客户端模拟网络：所有消息都经过 JSON 往返，和真实连接一样。
+ * 逻辑层：服务器上的联网对局。
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PROTOCOL_VERSION, parseClientMessage } from '../../../src/logic/net/protocol.js';
-import { createLobby } from '../../../src/logic/net/room.js';
-import { createGame } from '../../../src/logic/core/game.js';
-import { createEventBus } from '../../../src/logic/core/eventBus.js';
-import { createBoard } from '../../../src/logic/core/board.js';
 import { PHASES as P } from '../../../src/logic/core/turnMachine.js';
 import { validateState } from '../../../src/logic/core/stateValidator.js';
-import { decideAction } from '../../../src/logic/ai/strategy.js';
-import { createRng } from '../../../src/logic/utils/rng.js';
-import { TILES, GROUPS } from '../../../src/data/config/board.js';
 import { RULES } from '../../../src/data/config/rules.js';
 import { CARDS } from '../../../src/data/config/cards.js';
-import { rulesFor } from '../../../src/data/config/modes.js';
-
-const board = createBoard({ tiles: TILES, groups: GROUPS, rules: RULES });
-const OPTS = { aiDelayMs: 10, turnTimeoutMs: 1000, readyTimeoutMs: 500 };
-
-/**
- * 模拟服务器和多个客户端。服务器发出的消息先排队，由 pump() 逐条送达，避免在广播中途重入。
- */
-function network({ seed = 4242 } = {}) {
-  const queue = [];
-  const clients = new Map();
-  let rooms = 0;
-  const lobby = createLobby({
-    randomInt: (max) => (max === 2 ** 32 ? seed : rooms % max),
-    send: (id, msg) => queue.push([id, JSON.parse(JSON.stringify(msg))]),
-    matchOptions: OPTS,
-  });
-
-  function client(id) {
-    const c = { id, inbox: [], errors: [], state: null, you: null, autoReady: true, autoPlay: false };
-    c.send = (t, fields = {}) => {
-      const parsed = parseClientMessage(JSON.stringify({ v: PROTOCOL_VERSION, t, ...fields }));
-      if (!parsed.ok) throw new Error(parsed.error);
-      lobby.handle(id, parsed.msg);
-      if (t === 'create') rooms += 1;
-      pump();
-    };
-    clients.set(id, c);
-    return c;
-  }
-
-  function receive(c, msg) {
-    c.inbox.push(msg);
-    if (msg.t === 'error') c.errors.push(msg.message);
-    if (msg.t === 'started') c.you = msg.you;
-    if (msg.t !== 'update') return;
-    // 和浏览器一样：原地替换副本
-    if (c.state) {
-      for (const k of Object.keys(c.state)) delete c.state[k];
-      Object.assign(c.state, msg.state);
-    } else c.state = msg.state;
-    if (c.autoReady) c.send('ready', { seq: msg.seq });
-    if (c.autoPlay) play(c);
-  }
-
-  /** 轮到自己时，用 AI 策略选一步发给服务器（走真实的 action 消息） */
-  function play(c) {
-    if (c.state.phase === P.GAME_OVER) return;
-    const rules = rulesFor(c.state.mode, c.state.players.length);
-    const game = createGame({ board, rules, state: structuredClone(c.state), bus: createEventBus(), cards: CARDS });
-    if (game.actingPlayerId() !== c.you) return;
-    const action = decideAction({ state: c.state, board, rules, cards: CARDS }, c.you, { level: 'normal', rng: createRng(c.state.turn) });
-    if (action) c.send('action', { action });
-  }
-
-  function pump() {
-    while (queue.length > 0) {
-      const [id, msg] = queue.shift();
-      const c = clients.get(id);
-      if (c) receive(c, msg);
-    }
-  }
-
-  /** 推进假时钟直到对局结束或步数用完 */
-  function runToEnd(c, maxTimers = 20000) {
-    for (let i = 0; i < maxTimers && c.state.phase !== P.GAME_OVER; i++) {
-      vi.advanceTimersToNextTimer();
-      pump();
-    }
-  }
-
-  return { lobby, client, pump, runToEnd };
-}
-
-/** 建房：a 是房主，b 加入，其余座位按 extra 设置 */
-function room(net, extra = []) {
-  const a = net.client('a');
-  const b = net.client('b');
-  a.send('create', { name: '小红' });
-  const { code } = a.inbox.at(-1).room;
-  b.send('join', { code, name: '小蓝' });
-  extra.forEach((kind, i) => a.send('setSeat', { index: 2 + i, kind }));
-  return { a, b, code };
-}
+import { OPTS, board, network, room } from './fakeNet.js';
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
@@ -194,13 +104,13 @@ describe('联网对局', () => {
     expect(b.state.players[0].isAI).toBe(false);
   });
 
-  it('掉线的玩家一直由 AI 代打，对局能打完；全部掉线后房间关闭', () => {
+  it('离开的玩家一直由 AI 代打，对局能打完；全部掉线后暂停，到时间房间关闭', () => {
     const net = network();
     const { a, b } = room(net, ['easy']);
     a.send('start');
-    net.lobby.disconnect('b');
+    b.send('leave');
     net.pump();
-    expect(a.inbox.at(-2)?.room?.seats[1] ?? a.inbox.find((m) => m.t === 'room' && m.room.seats[1].kind === 'gone')).toBeTruthy();
+    expect(a.inbox.find((m) => m.t === 'room' && m.room.seats[1].kind === 'gone')).toBeTruthy();
     a.autoPlay = true;
     net.pump();
     a.send('ready', { seq: a.inbox.filter((m) => m.t === 'update').at(-1).seq });
@@ -210,6 +120,8 @@ describe('联网对局', () => {
     // 掉线的人再发消息无效
     expect(b.inbox.filter((m) => m.t === 'update').length).toBeLessThan(a.inbox.filter((m) => m.t === 'update').length);
     net.lobby.disconnect('a');
+    expect(net.lobby.roomCount()).toBe(1);
+    vi.advanceTimersByTime(10 * 60_000);
     expect(net.lobby.roomCount()).toBe(0);
     // 房间关闭后定时器都清掉了，时间再走也不会出错
     vi.advanceTimersByTime(60_000);

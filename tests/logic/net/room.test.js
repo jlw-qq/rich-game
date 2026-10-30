@@ -61,9 +61,12 @@ describe('限流', () => {
 function setup({ maxRooms } = {}) {
   const inbox = new Map();
   let n = 0;
+  let tokens = 0;
   const lobby = createLobby({
     // 固定序列：房间码依次为 2222、3333……，种子固定
     randomInt: (max) => (max === 2 ** 32 ? 12345 : Math.floor(n / 4) % max),
+    newToken: () => `tok${++tokens}`,
+    hashToken: (t) => `h:${t}`,
     send: (id, m) => inbox.set(id, [...(inbox.get(id) ?? []), m]),
     maxRooms,
   });
@@ -170,24 +173,24 @@ describe('房间', () => {
     expect(last('b').room.seats[0]).toEqual({ kind: 'open' });
     // 新房主可以改设置；原来的人能重新加入
     expect(send('b', 'setSeat', { index: 0, kind: 'normal' }).room.seats[0]).toEqual({ kind: 'normal' });
-    lobby.disconnect('b');
+    send('b', 'leave');
     expect(last('c').room).toMatchObject({ hostSeat: 2 });
-    lobby.disconnect('c');
+    send('c', 'leave');
     expect(lobby.roomCount()).toBe(0);
     expect(send('a', 'join', { code, name: '小红' }).message).toContain('找不到');
     lobby.disconnect('zzz'); // 不在房间里的连接断开不出错
   });
 
-  it('对局中有人断开：其他人收到房间更新，所有玩家都走了房间关闭', () => {
-    const { send, last, lobby } = setup();
+  it('对局中有人离开：座位标为已离开，所有玩家都离开后房间关闭', () => {
+    const { send, lobby, inbox } = setup();
     const { code } = send('a', 'create', { name: '小红' }).room;
     send('b', 'join', { code, name: '小蓝' });
     vi.useFakeTimers();
     send('a', 'start');
-    lobby.disconnect('a');
-    expect(last('b').room.seats[0]).toEqual({ kind: 'gone' });
-    expect(lobby.roomCount()).toBe(1);
-    lobby.disconnect('b');
+    send('a', 'leave');
+    expect(inbox.get('b').filter((m) => m.t === 'update').at(-1).notice).toContain('小红 离开了对局');
+    expect(lobby.getRoom(code).seats[0]).toEqual({ kind: 'gone' });
+    send('b', 'leave');
     expect(lobby.roomCount()).toBe(0);
   });
 
@@ -196,13 +199,13 @@ describe('房间', () => {
     send('a', 'create', { name: '甲' });
     send('b', 'create', { name: '乙' });
     expect(send('c', 'create', { name: '丙' }).message).toContain('已满');
-    lobby.disconnect('a');
+    send('a', 'leave');
     expect(send('c', 'create', { name: '丙' }).t).toBe('room');
   });
 
   it('房间码撞车时换一个；一直撞车时报错而不是死循环', () => {
     const inbox = [];
-    const lobby = createLobby({ randomInt: () => 0, send: (id, m) => inbox.push([id, m]) });
+    const lobby = createLobby({ randomInt: () => 0, newToken: () => 't', hashToken: (t) => t, send: (id, m) => inbox.push([id, m]) });
     lobby.handle('a', { t: 'create', name: '甲' });
     lobby.handle('b', { t: 'create', name: '乙' });
     expect(inbox.at(-1)).toEqual(['b', { t: 'error', message: expect.stringContaining('已满') }]);

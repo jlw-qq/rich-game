@@ -7,10 +7,12 @@ import { PROTOCOL_VERSION } from '../../logic/net/protocol.js';
 const CLOSE_REASONS = {
   'rate limit': '操作太频繁，连接被断开',
   'too many connections': '这台设备打开的连接太多了',
+  replaced: '你在另一个页面打开了这个座位，这里已断开',
 };
 
 /**
- * @param {{ onMessage: (msg: object) => void, onClose: (reason: string) => void }} handlers
+ * @param {{ onMessage: (msg: object) => void, onClose: (reason: string, canRetry: boolean) => void }} handlers
+ *   canRetry：网络问题导致的断开，可以自动重连；被服务器断开（顶替、限流）时为 false
  * @returns {Promise<{ send: (msg: object) => void, close: () => void }>} 连不上时 reject，错误信息可直接显示
  */
 export function connect({ onMessage, onClose }) {
@@ -46,7 +48,7 @@ export function connect({ onMessage, onClose }) {
     });
     ws.addEventListener('close', (e) => {
       if (!opened) reject(new Error('连不上联网服务器。联网对战需要用 npm run server 启动服务器，并从服务器的地址打开网页'));
-      else if (!closedByUs) onClose(CLOSE_REASONS[e.reason] ?? '和服务器的连接断开了');
+      else if (!closedByUs) onClose(CLOSE_REASONS[e.reason] ?? '和服务器的连接断开了', !Object.hasOwn(CLOSE_REASONS, e.reason));
     });
   });
 }

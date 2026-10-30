@@ -2,22 +2,25 @@
  * 联网服务器：同一个端口上提供网页（dist/）和 WebSocket（/ws）。
  * 房间规则在 src/logic/net/room.js，这里只负责连接、限流、消息检查和静态文件。
  *
- * 用法：npm run server（先构建再启动）。环境变量 PORT（默认 8787）、HOST（默认 0.0.0.0，即局域网可访问）。
+ * 用法：npm run server（先构建再启动）。环境变量 PORT（默认 8787）、HOST（默认 0.0.0.0，即局域网可访问）、
+ * DATA_DIR（房间存盘目录，默认项目里的 server-data/rooms）。重启后读回所有房间，玩家凭令牌回到原座位。
  */
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { networkInterfaces } from 'node:os';
 import { extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomInt, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { createLobby } from '../src/logic/net/room.js';
 import { createRateLimiter } from '../src/logic/net/rateLimit.js';
 import { MAX_MESSAGE_BYTES, parseClientMessage } from '../src/logic/net/protocol.js';
+import { createRoomStore } from './storage.js';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = process.env.HOST ?? '0.0.0.0';
 const DIST = fileURLToPath(new URL('../dist/', import.meta.url));
+const DATA_DIR = process.env.DATA_DIR ?? fileURLToPath(new URL('../server-data/rooms/', import.meta.url));
 /** 每个连接：平均每秒 10 条，最多连发 30 条；超出直接断开 */
 const RATE = { capacity: 30, perSecond: 10 };
 /** 同一个 IP 最多同时连几个（同一台电脑开多个标签页也要能玩） */
@@ -88,13 +91,28 @@ const wss = new WebSocketServer({
 const sockets = new Map();
 const perIp = new Map();
 
+const store = createRoomStore(DATA_DIR);
 const lobby = createLobby({
   randomInt: (max) => randomInt(max),
+  // 令牌 128 位随机数；磁盘上只存哈希，存档文件泄露也冒充不了玩家
+  newToken: () => randomBytes(16).toString('base64url'),
+  hashToken: (token) => createHash('sha256').update(token).digest('hex'),
   send(clientId, msg) {
     const ws = sockets.get(clientId);
     if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
   },
+  kick: (clientId) => sockets.get(clientId)?.close(4000, 'replaced'),
+  persist: (code, snapshot) => store.save(code, snapshot),
 });
+
+for (const { name, snapshot, error } of store.loadAll()) {
+  const reason = error ?? lobby.restore(snapshot);
+  if (reason) {
+    console.warn(`跳过房间存档 ${name}：${reason}（文件已改名为 .bad 留底）`);
+    store.quarantine(name);
+  }
+}
+if (lobby.roomCount() > 0) console.log(`读回 ${lobby.roomCount()} 个房间，等玩家重新连上`);
 
 wss.on('connection', (ws, req) => {
   const ip = req.socket.remoteAddress ?? '?';
@@ -151,6 +169,18 @@ const heartbeat = setInterval(() => {
   }
 }, HEARTBEAT_MS);
 wss.on('close', () => clearInterval(heartbeat));
+
+// Ctrl+C 时等存盘写完再退出
+let stopping = false;
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, async () => {
+    if (stopping) process.exit(1);
+    stopping = true;
+    console.log('正在保存房间……');
+    await store.flush();
+    process.exit(0);
+  });
+}
 
 http.listen(PORT, HOST, () => {
   console.log(`城市大富翁联网服务器已启动，端口 ${PORT}`);

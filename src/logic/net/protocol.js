@@ -6,7 +6,8 @@
  * 客户端 → 服务器：{ v, t, ...字段 }
  *   create { name }            建房，自己坐 1 号位并成为房主
  *   join { code, name }        凭房间码加入，坐第一个空位
- *   leave {}                   离开房间
+ *   resume { code, token }     断线后凭令牌回到原座位
+ *   leave {}                   离开房间（令牌作废）
  *   setMode { mode }           房主改模式
  *   setSeat { index, kind }    房主改座位：open 空位 / closed 关闭 / normal、easy AI
  *   start {}                   房主开始（不能还有空位）
@@ -14,6 +15,8 @@
  *   ready { seq }              第 seq 批事件已经播完
  *   toLobby {}                 对局结束后，房主带大家回房间
  * 服务器 → 客户端：
+ *   joined { code, token }     坐进了座位；token 用于断线重连，只发给本人
+ *   resumeFailed { message }   令牌无效或房间已关闭
  *   room { room }              房间最新情况，见 room.js 的 roomView
  *   started { you }            对局开始，你的玩家 id；紧接着会收到第一条 update
  *   update { seq, events, state, notice? }  见 match.js
@@ -62,6 +65,7 @@ function cleanAction(v) {
 const SCHEMAS = {
   create: { name: (v) => isStr(v, 40) },
   join: { code: (v) => isStr(v, 16), name: (v) => isStr(v, 40) },
+  resume: { code: (v) => isStr(v, 16), token: (v) => isStr(v, 64) && v.length > 0 },
   leave: {},
   setMode: { mode: (v) => isStr(v, 20) },
   setSeat: { index: (v) => Number.isInteger(v) && v >= 0 && v < 16, kind: (v) => SEAT_SETTINGS.includes(v) },

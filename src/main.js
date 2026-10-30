@@ -547,21 +547,54 @@ const setup = createSetup({
 
 // ---------- 联网房间 ----------
 
-/** 当前的联网连接：conn 为连接，waiting 为等待服务器回应的建房/加入请求 */
+/** 当前的联网连接：conn 为连接，waiting 为等待服务器回应的建房/加入/重连请求，me 为对局里自己的玩家 id */
 let net = null;
+
+/**
+ * 断线重连用的房间码和令牌。存在 sessionStorage：只属于这个标签页，刷新后还在，
+ * 同一台电脑开两个标签页各坐一个座位时互不覆盖。读写失败时就是不能自动重连。
+ */
+const SEAT_KEY = 'rich-game:online-seat';
+function loadSeat() {
+  try {
+    const v = JSON.parse(window.sessionStorage.getItem(SEAT_KEY) ?? 'null');
+    return v && typeof v.code === 'string' && typeof v.token === 'string' ? v : null;
+  } catch {
+    return null;
+  }
+}
+function saveSeat(seat) {
+  try {
+    if (seat) window.sessionStorage.setItem(SEAT_KEY, JSON.stringify(seat));
+    else window.sessionStorage.removeItem(SEAT_KEY);
+  } catch {
+    // 存不下只影响刷新后能否自动回到座位
+  }
+}
+/** 断线后自动重连：每次间隔、最多次数 */
+const RECONNECT_MS = 2000;
+const RECONNECT_TRIES = 15;
 
 const lobby = createLobby({ root: $('lobby'), send: (msg) => net?.conn.send(msg), onLeave: leaveRoom });
 
 /** 收到服务器消息 */
 function onNetMessage(msg) {
-  const waiting = net?.waiting;
-  if (net) net.waiting = null;
-  if (msg.t === 'room') {
+  // 只有这几种消息是对建房/加入/重连请求的回应
+  const waiting = ['room', 'error', 'resumeFailed'].includes(msg.t) ? net?.waiting : null;
+  if (waiting) net.waiting = null;
+  if (msg.t === 'joined') {
+    saveSeat({ code: String(msg.code), token: String(msg.token) });
+  } else if (msg.t === 'left') {
+    saveSeat(null);
+  } else if (msg.t === 'resumeFailed') {
+    saveSeat(null);
+    if (waiting) waiting(String(msg.message));
+  } else if (msg.t === 'room') {
     waiting?.(null);
     // 对局结束、房主带大家回到房间
     if (session?.online && msg.room.phase === 'lobby') endOnlineSession();
-    // 对局中其他人进出时房间也会更新，只在大厅里显示
-    if (session?.online) return;
+    // 对局中其他人进出时房间也会更新，只在大厅里显示；重连回到对局时等接下来的 update
+    if (session?.online || msg.room.phase === 'playing') return;
     setup.hide();
     lobby.setRoom(msg.room);
   } else if (msg.t === 'error') {
@@ -613,13 +646,43 @@ document.addEventListener('visibilitychange', () => {
   else requestFrame();
 });
 
-function onNetClose(reason) {
+function onNetClose(reason, canRetry) {
   const waiting = net?.waiting;
   net = null;
   if (waiting) return waiting(reason);
+  if (canRetry && loadSeat()) return reconnect(reason);
+  if (!canRetry) saveSeat(null);
+  closeOnline(reason);
+}
+
+/** 不再联网：回到开局界面并显示原因 */
+function closeOnline(message) {
   lobby.hide();
-  if (session?.online) leaveToSetup({ message: reason });
-  else showSetup({ message: reason });
+  if (session?.online) leaveToSetup({ message });
+  else showSetup({ message });
+}
+
+/** 网络断了：保留画面，每隔一会儿凭令牌重连，连上后服务器发来最新局面 */
+async function reconnect(reason) {
+  if (session?.online) log.add(`${reason}，正在重连……`, 'error');
+  else lobby.showNotice(`${reason}，正在重连……`);
+  for (let i = 0; i < RECONNECT_TRIES; i++) {
+    await new Promise((r) => setTimeout(r, RECONNECT_MS));
+    const seat = loadSeat();
+    if (!seat || net) return;
+    const error = await request({ t: 'resume', ...seat });
+    if (!error) {
+      if (session?.online) log.add('已重新连上', 'highlight');
+      else lobby.showNotice('');
+      return;
+    }
+    // 令牌已经无效（房间关了、座位没了）就不用再试
+    if (!loadSeat()) return closeOnline(error);
+    net?.conn.close();
+    net = null;
+  }
+  saveSeat(null);
+  closeOnline('一直连不上服务器，已退出联网对局');
 }
 
 /**
@@ -650,6 +713,7 @@ function endOnlineSession() {
 }
 
 function leaveRoom() {
+  saveSeat(null);
   if (net) {
     net.conn.send({ t: 'leave' });
     net.conn.close();
@@ -761,5 +825,15 @@ zoomOutButton.addEventListener('click', () => {
 $('export').addEventListener('click', downloadSave);
 $('quit').addEventListener('click', () => (session?.online ? leaveRoom() : leaveToSetup()));
 
-showSetup();
+// 刷新前在联网房间里的话，凭令牌回到原来的座位
+const savedSeat = loadSeat();
+if (savedSeat) {
+  request({ t: 'resume', ...savedSeat }).then((error) => {
+    if (!error) return;
+    net?.conn.close();
+    net = null;
+    saveSeat(null);
+    showSetup({ message: `没能回到联网房间：${error}` });
+  });
+} else showSetup();
 resize();

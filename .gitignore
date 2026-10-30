@@ -4,3 +4,5 @@ coverage/
 *.log
 .DS_Store
 .vite/
+# 联网服务器的房间存盘
+server-data/
