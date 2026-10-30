@@ -312,6 +312,8 @@ select:focus-visible {
 .status {
   margin: 0 0 10px;
   min-height: 3em;
+  /* 城市事件的选项说明分行显示 */
+  white-space: pre-line;
 }
 
 .actions {

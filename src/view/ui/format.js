@@ -8,6 +8,18 @@ export const money = (n) => `${n.toLocaleString('zh-CN')} 元`;
 const DECK_NAMES = { chance: '机会', fate: '命运' };
 
 /**
+ * 城市事件选项的说明：写明结果和概率，帮助玩家判断。稳妥选项的按钮文字已经写明金额，返回空字符串。
+ * @param {{ outcome: object, available: boolean, chance: number | null, target: { name: string } | null }} o
+ */
+export function choiceDetail(o) {
+  const out = o.outcome;
+  if (out.type === 'gain') return '';
+  if (out.type === 'upgrade') return o.target ? `${o.target.name} 免费升一级` : '没有可以升级的地产（需要拥有整个颜色组）';
+  const pct = Math.round(o.chance * 100);
+  return `掷两颗骰子：${out.target} 点及以上（${pct}%）得 ${money(out.win)}，否则付 ${money(out.lose)}`;
+}
+
+/**
  * 交易一边的内容，如“西宁、银川、500 元、出狱卡 ×1”
  * @param {{ properties: string[], cash: number, jailCards: number }} side
  * @param {{ tiles: readonly object[] }} board
@@ -94,6 +106,7 @@ export function formatEvent(type, p, { state, board, cards }) {
     case 'releasedFromJail':
       return `${name(p.playerId)} ${RELEASE_TEXT[p.method] ?? '出狱'}`;
     case 'propertyUpgraded':
+      if (p.free) return `${name(p.playerId)} 的 ${tileName(p.tileId)} 免费升到 ${p.level} 级`;
       return `${name(p.playerId)} 把 ${tileName(p.tileId)} 升到 ${p.level} 级，花费 ${money(p.cost)}`;
     case 'buildingSold':
       return `${name(p.playerId)} 卖掉 ${tileName(p.tileId)} 的一级建筑，得到 ${money(p.refund)}`;
@@ -109,6 +122,17 @@ export function formatEvent(type, p, { state, board, cards }) {
       return `${name(p.trade.toId)} 接受了交易`;
     case 'tradeRejected':
       return `${name(p.trade.toId)} 拒绝了交易`;
+    case 'choiceOffered': {
+      const card = cards.find((c) => c.id === p.cardId);
+      return `${name(p.playerId)} 遇到城市事件「${card?.title ?? p.cardId}」，要做个选择`;
+    }
+    case 'choiceMade': {
+      const card = cards.find((c) => c.id === p.cardId);
+      return `${name(p.playerId)} 选择了「${card?.effect.options[p.index]?.label ?? p.index}」`;
+    }
+    case 'gambleRolled':
+      // 金额由紧随其后的收款、付款日志写明，这里只写掷骰结果
+      return `${name(p.playerId)} 掷出 ${p.dice.join(' + ')} = ${p.total}，${p.won ? '冒险成功！' : `没到 ${p.target} 点，冒险失败`}`;
     case 'playerBankrupt':
       return `${name(p.playerId)} 破产了`;
     case 'assetsLiquidated':

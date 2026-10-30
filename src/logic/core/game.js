@@ -19,6 +19,7 @@ import { charge, liquidateForBankruptcy, payPendingDebt } from '../systems/bankr
 import { applyCard, drawCard } from '../systems/cards.js';
 import { payBail, releaseFromJail, returnJailFreeCards, useJailFreeCard } from '../systems/jail.js';
 import { executeTrade, prepareTrade } from '../systems/trade.js';
+import { choiceOptions, resolveChoice } from '../systems/choice.js';
 
 const fail = (error) => ({ ok: false, error });
 
@@ -105,6 +106,11 @@ export function createGame({ board, rules, state, bus, cards = [], rollDice = de
         return chargeOrAwait(player, plan.creditorId, plan.amount, reason);
       case 'jail':
         return jailAndEnd(player);
+      case 'choice':
+        state.pendingChoice = { playerId: player.id, cardId: card.id };
+        fsm.transition(P.AWAIT_CHOICE);
+        bus.emit('choiceOffered', { playerId: player.id, cardId: card.id, options: choiceOptions(ctx, player.id, card) });
+        return;
       case 'move':
         if (plan.steps === 0) return finishTile();
         if (depth >= MAX_CARD_CHAIN) {
@@ -299,6 +305,33 @@ export function createGame({ board, rules, state, bus, cards = [], rollDice = de
     return { ok: true };
   }
 
+  /** 当前待选的城市事件卡和各选项（不在选择阶段时为 null） */
+  function pendingChoice() {
+    if (state.phase !== P.AWAIT_CHOICE || !state.pendingChoice) return null;
+    const card = cards.find((c) => c.id === state.pendingChoice.cardId);
+    return card ? { card, options: choiceOptions(ctx, state.pendingChoice.playerId, card) } : null;
+  }
+
+  /**
+   * 在城市事件卡的选项里选一个。
+   * @param {number} index 选项下标
+   */
+  function chooseOption(index) {
+    if (state.phase !== P.AWAIT_CHOICE) return fail(`当前阶段没有待选的城市事件: ${state.phase}`);
+    const pending = pendingChoice();
+    if (!pending) return fail('城市事件卡无效');
+    const option = Number.isInteger(index) ? pending.options[index] : undefined;
+    if (!option) return fail(`没有这个选项: ${index}`);
+    if (!option.available) return fail('这个选项现在不能选');
+
+    const player = fsm.currentPlayer();
+    const plan = resolveChoice(ctx, player.id, pending.card, index);
+    state.pendingChoice = null;
+    if (plan.kind === 'charge') chargeOrAwait(player, plan.creditorId, plan.amount, { type: 'card', cardId: pending.card.id });
+    else finishTile();
+    return { ok: true };
+  }
+
   /** 结束回合：掷出双数且仍可行动则同一玩家再掷，否则换下一位 */
   function endTurn() {
     if (state.phase !== P.TURN_END) return fail(`当前阶段不能结束回合: ${state.phase}`);
@@ -341,6 +374,8 @@ export function createGame({ board, rules, state, bus, cards = [], rollDice = de
     proposeTrade,
     acceptTrade,
     rejectTrade,
+    pendingChoice,
+    chooseOption,
     endTurn,
   };
 }

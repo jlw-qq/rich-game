@@ -3,7 +3,8 @@
  * 返回的操作仍由 game 校验；非法操作由 driver 兜底。
  */
 import { PHASES as P } from '../core/turnMachine.js';
-import { calcRent, ownsFullGroup, redeemCost } from '../systems/property.js';
+import { calcRent, ownsFullGroup, redeemCost, rentAt } from '../systems/property.js';
+import { choiceOptions } from '../systems/choice.js';
 
 /**
  * @typedef {{ state: object, board: object, rules: object }} View
@@ -215,6 +216,35 @@ function tradeOffer(view, player, reserve, rng) {
   };
 }
 
+/**
+ * 城市事件选择。
+ * 普通难度按期望收益选：冒险输了付得起（付完不低于安全下限）才冒险；免费升级按多收约 6 回合的租金估值。
+ * 简单难度在能选的选项里随机选。
+ */
+function choiceAction(view, player, easy, rng) {
+  const { state, rules } = view;
+  const card = view.cards?.find((c) => c.id === state.pendingChoice?.cardId);
+  if (!card) return { kind: 'choose', index: 0 };
+  const options = choiceOptions(view, player.id, card);
+  const open = options.map((o, i) => (o.available ? i : -1)).filter((i) => i >= 0);
+  if (easy) return { kind: 'choose', index: open[Math.floor(rng.next() * open.length)] };
+
+  const reserve = reserveFor(view, player.id);
+  const value = (o) => {
+    const out = o.outcome;
+    if (out.type === 'gain') return out.amount;
+    if (out.type === 'upgrade') {
+      const level = state.properties[o.target.id].level;
+      return (rentAt(o.target, level + 1, rules) - rentAt(o.target, level, rules)) * 6 + o.target.upgradeCost;
+    }
+    if (player.cash - out.lose < reserve) return -Infinity;
+    return o.chance * out.win - (1 - o.chance) * out.lose;
+  };
+  let best = 0;
+  for (const i of open) if (value(options[i]) > value(options[best])) best = i;
+  return { kind: 'choose', index: best };
+}
+
 /** 买地：留足安全现金就买；能凑组时放宽到一半安全现金 */
 function shouldBuy(view, player, tile, reserve) {
   const { state, board } = view;
@@ -277,6 +307,9 @@ export function decideAction(view, playerId, { level = 'normal', rng }) {
 
     case P.AWAIT_TRADE:
       return respondTrade(view, player, easy);
+
+    case P.AWAIT_CHOICE:
+      return choiceAction(view, player, easy, rng);
 
     case P.AWAIT_PAYMENT:
       return paymentAction(view, player);

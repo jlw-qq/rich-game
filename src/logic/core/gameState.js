@@ -5,12 +5,14 @@ import { PHASES } from './turnMachine.js';
 import { createRng } from '../utils/rng.js';
 import { buildDecks, validateCards } from '../systems/cards.js';
 import { MODES } from '../../data/config/modes.js';
+import { REPLACED_CARD_IDS } from '../../data/config/cards.js';
 
 /**
  * 版本 2：新增交易（pendingTrade、tradesThisTurn）
  * 版本 3：新增对局模式（mode），规则按模式取，见 data/config/modes.js
+ * 版本 4：新增城市事件卡（pendingChoice、eventRngState），部分旧卡被替换
  */
-export const STATE_VERSION = 3;
+export const STATE_VERSION = 4;
 export const MAX_NAME_LENGTH = 12;
 /** AI 难度 */
 export const AI_LEVELS = ['easy', 'normal'];
@@ -116,11 +118,15 @@ export function createInitialState({ board, rules, players, seed, cards = [], mo
     pendingTrade: null,
     /** 当前玩家本回合已发起的交易次数，换人时清零 */
     tradesThisTurn: 0,
+    /** 等待选择的城市事件：{ playerId, cardId } */
+    pendingChoice: null,
     /** 牌堆：卡牌 id 数组，从头抽 */
     decks,
     rngState: rng.getState(),
     /** AI 决策用的随机数状态，与骰子分开，存档后 AI 的选择也能复现 */
     aiRngState: (seed ^ 0x9e3779b9) >>> 0,
+    /** 城市事件冒险掷骰用的随机数状态，与移动骰子分开，选什么都不影响之后的骰子 */
+    eventRngState: eventRngSeed(seed),
     winnerId: null,
     /** 终局原因：'bankruptcy' | 'roundLimit' | 'goal' */
     endReason: null,
@@ -137,7 +143,18 @@ export function migrateState(state) {
   if (s.version === 1) s = { ...s, version: 2, pendingTrade: null, tradesThisTurn: 0 };
   // 版本 3 之前只有经典规则
   if (s.version === 2) s = { ...s, version: 3, mode: 'classic' };
+  if (s.version === 3) {
+    // 被城市事件替换掉的卡牌换成新卡（同一牌堆、一一对应），牌堆顺序不变
+    const swap = (id) => REPLACED_CARD_IDS[id] ?? id;
+    const decks = s.decks && typeof s.decks === 'object' ? Object.fromEntries(Object.entries(s.decks).map(([k, v]) => [k, Array.isArray(v) ? v.map(swap) : v])) : s.decks;
+    s = { ...s, version: 4, decks, pendingChoice: null, eventRngState: eventRngSeed(s.rngState >>> 0) };
+  }
   return s;
+}
+
+/** 城市事件随机数的种子，由对局种子派生 */
+function eventRngSeed(seed) {
+  return (Math.imul(seed ^ 0x85ebca6b, 0xc2b2ae35) >>> 0) || 1;
 }
 
 /**

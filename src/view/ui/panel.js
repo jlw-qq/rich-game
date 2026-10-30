@@ -3,7 +3,7 @@
  * 只读状态来渲染；按钮点击通过 onAction 交给 main.js 调用逻辑层。
  */
 import { el } from './dom.js';
-import { money, tradeSideText } from './format.js';
+import { choiceDetail, money, tradeSideText } from './format.js';
 import { rentAt } from '../../logic/systems/property.js';
 import { PLAYER_COLORS, GROUP_COLORS } from '../render/theme.js';
 
@@ -31,7 +31,12 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
       type: 'button',
       class: ['btn', action.primary && 'btn-primary', action.danger && 'btn-danger'].filter(Boolean).join(' '),
       disabled,
-      dataset: { kind: action.kind },
+      // dataset 只写有值的项，避免出现 data-index="undefined"
+      dataset: {
+        kind: action.kind,
+        ...(action.index !== undefined && { index: String(action.index) }),
+        ...(action.disabled && { unavailable: 'true' }),
+      },
       onclick: () => onAction(action),
       text: action.label,
     });
@@ -88,6 +93,15 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
         const name = (id) => state.players.find((p) => p.id === id)?.name;
         return `${name(t.fromId)} 想用「${tradeSideText(t.give, board)}」换 ${name(t.toId)} 的「${tradeSideText(t.take, board)}」。${name(t.toId)} 要接受吗？`;
       }
+      case 'awaitChoice': {
+        const pending = game.pendingChoice();
+        if (!pending) return '';
+        const lines = pending.options.map((o, i) => {
+          const detail = choiceDetail(o);
+          return `${i + 1}. ${o.label}${detail ? `——${detail}` : ''}`;
+        });
+        return `城市事件「${pending.card.title}」：${pending.card.text}\n${lines.join('\n')}`;
+      }
       case 'awaitDecision': {
         const tile = board.getTile(player.position);
         return `${tile.name} 无人拥有，售价 ${money(tile.price)}。${player.name} 现有 ${money(player.cash)}，要买吗？`;
@@ -130,6 +144,14 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
           { kind: 'acceptTrade', label: '接受交易', primary: true },
           { kind: 'rejectTrade', label: '拒绝' },
         ];
+      case 'awaitChoice':
+        return (game.pendingChoice()?.options ?? []).map((o, i) => ({
+          kind: 'choose',
+          index: i,
+          label: o.label,
+          primary: i === 0,
+          disabled: !o.available,
+        }));
       case 'awaitDecision':
         return [
           { kind: 'buy', label: '买下', primary: true },
@@ -209,7 +231,7 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
     const acting = state.players.find((p) => p.id === game.actingPlayerId());
     status.textContent =
       acting?.isAI && state.phase !== 'gameOver' ? `${acting.name}（AI）正在操作…` : statusText(state, game, board);
-    actions.replaceChildren(...mainActions(state, game).map((a) => button(a, busy && !ALWAYS_ENABLED.has(a.kind))));
+    actions.replaceChildren(...mainActions(state, game).map((a) => button(a, (busy && !ALWAYS_ENABLED.has(a.kind)) || Boolean(a.disabled))));
     renderAssets(state, game, board, busy, rules);
   }
 
@@ -235,7 +257,8 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
   /** 动画播放中：只切换按钮的禁用状态，不重绘数字（避免提前显示结果） */
   function setBusy(busy) {
     for (const b of [...actions.querySelectorAll('button'), ...assets.querySelectorAll('button')]) {
-      if (!ALWAYS_ENABLED.has(b.dataset.kind)) b.disabled = busy;
+      // 本身不可选的选项（data-unavailable）动画结束后仍保持禁用
+      if (!ALWAYS_ENABLED.has(b.dataset.kind)) b.disabled = busy || b.dataset.unavailable === 'true';
     }
   }
 

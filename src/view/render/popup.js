@@ -37,7 +37,7 @@ const yuan = (n) => `¥${n.toLocaleString('zh-CN')}`;
 
 /**
  * @typedef {{
- *   kind: 'buy' | 'rent' | 'landmark' | 'bankrupt' | 'trade',
+ *   kind: 'buy' | 'rent' | 'landmark' | 'bankrupt' | 'trade' | 'gambleWin' | 'gambleLose',
  *   title: string,
  *   text: string,
  *   tileId: string | null,
@@ -95,6 +95,17 @@ export function createPopupDescriber() {
           text: `租金涨到 ${yuan(calcRent(ctx, t.id))}`,
           tileId: t.id,
           group: t.group,
+          playerIndex: index(p.playerId),
+        };
+      }
+      case 'gambleRolled': {
+        const card = ctx.cards?.find((c) => c.id === p.cardId);
+        return {
+          kind: p.won ? 'gambleWin' : 'gambleLose',
+          title: `${card?.title ?? '城市事件'}：掷出 ${p.total} 点`,
+          text: p.won ? `成功！${player(p.playerId).name} 获得 ${yuan(p.amount)}` : `没到 ${p.target} 点，${player(p.playerId).name} 损失 ${yuan(p.amount)}`,
+          tileId: null,
+          group: null,
           playerIndex: index(p.playerId),
         };
       }
@@ -226,7 +237,7 @@ export function drawPopup(ctx, { width, height }, popup, { t, toast, reducedMoti
   }
 
   // 金币：买地、收租、建成地标时从卡片中间往上撒
-  if (!reducedMotion && ['buy', 'rent', 'landmark'].includes(popup.kind) && t < 0.7) {
+  if (!reducedMotion && ['buy', 'rent', 'landmark', 'gambleWin'].includes(popup.kind) && t < 0.7) {
     for (let k = 0; k < 7; k++) {
       const a = -Math.PI / 2 + (k - 3) * 0.32;
       const d = (t / 0.7) * (60 + (k % 3) * 18);

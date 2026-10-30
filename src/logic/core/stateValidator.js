@@ -31,7 +31,7 @@ export function validateState(state, { board, rules: baseRules, cards }) {
   for (const key of ['turn', 'round']) if (!(isInt(state[key]) && state[key] >= 1)) err(`${key} 必须是正整数`);
   if (isInt(state.round) && state.round > rules.maxRounds) err(`round 超过回合上限 ${rules.maxRounds}`);
   if (!isNonNegInt(state.doublesCount) || state.doublesCount >= rules.maxConsecutiveDoubles) err('doublesCount 越界');
-  for (const key of ['rngState', 'aiRngState']) if (!isUint32(state[key])) err(`${key} 必须是 32 位无符号整数`);
+  for (const key of ['rngState', 'aiRngState', 'eventRngState']) if (!isUint32(state[key])) err(`${key} 必须是 32 位无符号整数`);
 
   // ---- 玩家
   const players = state.players;
@@ -135,6 +135,19 @@ export function validateState(state, { board, rules: baseRules, cards }) {
     }
   } else if (trade !== null) {
     err('非交易阶段存在待答复的交易');
+  }
+
+  // ---- 城市事件
+  const pc = state.pendingChoice;
+  if (state.phase === PHASES.AWAIT_CHOICE) {
+    const current = isInt(idx) ? players[idx] : null;
+    if (!isPlainObject(pc)) err('选择阶段缺少城市事件数据');
+    else {
+      if (pc.playerId !== current?.id) err('城市事件不属于当前玩家');
+      if (cards.find((c) => c.id === pc.cardId)?.effect.type !== 'choice') err('城市事件卡无效');
+    }
+  } else if (pc !== null) {
+    err('非选择阶段存在待选的城市事件');
   }
 
   // ---- 终局

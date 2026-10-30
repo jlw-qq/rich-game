@@ -19,7 +19,8 @@ function signature(state) {
   const players = state.players.map((p) => `${p.cash},${p.position},${p.bankrupt ? 1 : 0},${p.inJail ? 1 : 0},${p.jailFreeCards.length}`);
   const props = Object.values(state.properties).map((p) => `${p.ownerId ?? '-'}${p.level}${p.mortgaged ? 'm' : ''}`);
   const trade = state.pendingTrade ? JSON.stringify(state.pendingTrade) : '-';
-  return [state.phase, state.turn, state.currentPlayerIndex, state.doublesCount, state.tradesThisTurn, trade, players.join('|'), props.join('')].join('#');
+  const choice = state.pendingChoice ? `${state.pendingChoice.cardId}` : '-';
+  return [state.phase, state.turn, state.currentPlayerIndex, state.doublesCount, state.tradesThisTurn, trade, choice, players.join('|'), props.join('')].join('#');
 }
 
 /**
@@ -30,7 +31,8 @@ function signature(state) {
  *   rules: object,
  *   decide?: typeof decideAction,
  *   maxStepsPerTurn?: number,
- * }} options decide 可替换，便于测试兜底逻辑
+ *   cards?: object[],
+ * }} options decide 可替换，便于测试兜底逻辑；cards 为卡牌配置（城市事件选项要用）
  */
 export function createAiDriver({
   game,
@@ -39,8 +41,9 @@ export function createAiDriver({
   rules,
   decide = decideAction,
   maxStepsPerTurn = DEFAULT_MAX_STEPS_PER_TURN,
+  cards = [],
 }) {
-  const view = { state, board, rules };
+  const view = { state, board, rules, cards };
   const stats = { steps: 0, fallbacks: 0 };
   let turnKey = -1;
   let stepsThisTurn = 0;
@@ -71,6 +74,9 @@ export function createAiDriver({
         return game.rollDice();
       case P.AWAIT_TRADE:
         return game.rejectTrade();
+      case P.AWAIT_CHOICE:
+        // 第一个选项是稳妥选项，配置校验保证它总能选
+        return game.chooseOption(0);
       case P.AWAIT_DECISION:
         return game.declineProperty();
       case P.AWAIT_PAYMENT: {

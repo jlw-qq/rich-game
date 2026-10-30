@@ -10,6 +10,8 @@ export const PHASES = Object.freeze({
   MOVING: 'moving',
   TILE_EVENT: 'tileEvent',
   AWAIT_DECISION: 'awaitDecision',
+  /** 抽到城市事件卡，等玩家在选项里选一个 */
+  AWAIT_CHOICE: 'awaitChoice',
   /** 欠款未付清，玩家需变现资产后还款或宣告破产 */
   AWAIT_PAYMENT: 'awaitPayment',
   SETTLE: 'settle',
@@ -27,7 +29,9 @@ const TRANSITIONS = Object.freeze({
   [P.AWAIT_TRADE]: [P.AWAIT_ROLL],
   [P.MOVING]: [P.TILE_EVENT],
   // tileEvent → moving：卡牌让玩家再次移动
-  [P.TILE_EVENT]: [P.AWAIT_DECISION, P.AWAIT_PAYMENT, P.SETTLE, P.MOVING],
+  [P.TILE_EVENT]: [P.AWAIT_DECISION, P.AWAIT_PAYMENT, P.SETTLE, P.MOVING, P.AWAIT_CHOICE],
+  // 选完：直接结算，或冒险失败付不起时进入还款
+  [P.AWAIT_CHOICE]: [P.SETTLE, P.AWAIT_PAYMENT],
   [P.AWAIT_DECISION]: [P.SETTLE],
   // awaitPayment → moving：付清强制保释金后按掷出的点数移动
   [P.AWAIT_PAYMENT]: [P.SETTLE, P.MOVING],

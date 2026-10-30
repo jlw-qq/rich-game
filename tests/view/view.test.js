@@ -68,6 +68,10 @@ function playRecordedGame(seed) {
         if (!game.payDebt().ok) game.declareBankruptcy();
         break;
       }
+      case P.AWAIT_CHOICE:
+        // 优先选第二个选项，让冒险、免费升级的事件也被翻译到
+        if (!game.chooseOption(1).ok) game.chooseOption(0);
+        break;
       default:
         game.endTurn();
     }
@@ -273,5 +277,15 @@ describe('事件日志收起', () => {
     expect(logToggleLabel(COLLAPSED_COUNT, false)).toBeNull();
     expect(logToggleLabel(COLLAPSED_COUNT + 1, false)).toBe(`展开全部记录（共 ${COLLAPSED_COUNT + 1} 条）`);
     expect(logToggleLabel(50, true)).toBe('收起记录');
+  });
+});
+
+describe('城市事件文字', () => {
+  it('选项说明写明概率和金额；稳妥选项不重复金额', async () => {
+    const { choiceDetail } = await import('../../src/view/ui/format.js');
+    expect(choiceDetail({ outcome: { type: 'gain', amount: 500 } })).toBe('');
+    expect(choiceDetail({ outcome: { type: 'gamble', target: 7, win: 2500, lose: 800 }, chance: 21 / 36 })).toBe('掷两颗骰子：7 点及以上（58%）得 2,500 元，否则付 800 元');
+    expect(choiceDetail({ outcome: { type: 'upgrade' }, target: { name: '北京' } })).toBe('北京 免费升一级');
+    expect(choiceDetail({ outcome: { type: 'upgrade' }, target: null })).toContain('没有可以升级');
   });
 });

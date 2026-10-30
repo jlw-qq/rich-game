@@ -187,9 +187,9 @@ describe('卡牌效果', () => {
   });
 
   it('普通卡抽完放回牌堆底部，牌堆循环', () => {
-    const { state, game } = setup({ rolls: [[2, 3]], deck: { chance: ['c-dividend', 'c-lottery'] } });
+    const { state, game } = setup({ rolls: [[2, 3]], deck: { chance: ['c-speeding', 'c-repairs'] } });
     game.rollDice();
-    expect(state.decks.chance).toEqual(['c-lottery', 'c-dividend']);
+    expect(state.decks.chance).toEqual(['c-repairs', 'c-speeding']);
   });
 
   it('空牌堆不报错，直接结算', () => {
@@ -308,10 +308,10 @@ describe('监狱', () => {
   });
 
   it('出狱卡：抽到持有、离开牌堆，用掉后放回原牌堆', () => {
-    const { state, game, p1 } = setup({ rolls: [[1, 1], [1, 2]], deck: { fate: ['f-jail-free', 'f-stock'] } });
+    const { state, game, p1 } = setup({ rolls: [[1, 1], [1, 2]], deck: { fate: ['f-jail-free', 'f-bank-error'] } });
     game.rollDice();
     expect(p1.jailFreeCards).toEqual(['f-jail-free']);
-    expect(state.decks.fate).toEqual(['f-stock']);
+    expect(state.decks.fate).toEqual(['f-bank-error']);
     Object.assign(p1, { inJail: true, position: JAIL });
     game.endTurn(); // 双数但在狱中，不追加
     expect(game.currentPlayer().id).toBe('p2');
@@ -319,7 +319,7 @@ describe('监狱', () => {
     expect(game.useJailFreeCard().ok).toBe(true);
     expect(p1.inJail).toBe(false);
     expect(p1.jailFreeCards).toEqual([]);
-    expect(state.decks.fate).toEqual(['f-stock', 'f-jail-free']);
+    expect(state.decks.fate).toEqual(['f-bank-error', 'f-jail-free']);
     expect(game.useJailFreeCard().ok).toBe(false);
   });
 
@@ -382,6 +382,10 @@ describe('5 人局', () => {
           if (!game.payDebt().ok) expect(game.declareBankruptcy().ok).toBe(true);
           break;
         }
+        case P.AWAIT_CHOICE:
+          // 轮流试不同选项（冒险、升级不可选时退回稳妥）
+          if (!game.chooseOption(step % 2).ok) expect(game.chooseOption(0).ok).toBe(true);
+          break;
         case P.TURN_END:
           expect(game.endTurn().ok).toBe(true);
           break;

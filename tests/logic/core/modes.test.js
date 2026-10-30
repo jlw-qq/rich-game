@@ -155,7 +155,7 @@ describe('存档迁移到版本 3', () => {
     const loaded = importSave(serializeSave(v2), ctx);
     expect(loaded.ok).toBe(true);
     expect(loaded.state).toMatchObject({ version: STATE_VERSION, mode: 'classic' });
-    expect(migrateState({ version: 1, players: [] })).toMatchObject({ version: 3, mode: 'classic', pendingTrade: null });
+    expect(migrateState({ version: 1, players: [] })).toMatchObject({ version: STATE_VERSION, mode: 'classic', pendingTrade: null, pendingChoice: null });
   });
 
   it('短局存档按短局的回合上限校验；未知模式被拒绝', () => {

@@ -4,7 +4,8 @@
  */
 
 export const DECKS = ['chance', 'fate'];
-export const EFFECT_TYPES = ['gain', 'pay', 'collectFromEach', 'payEach', 'move', 'moveTo', 'goToJail', 'jailFree', 'repairs'];
+export const EFFECT_TYPES = ['gain', 'pay', 'collectFromEach', 'payEach', 'move', 'moveTo', 'goToJail', 'jailFree', 'repairs', 'choice'];
+const OUTCOME_TYPES = ['gain', 'gamble', 'upgrade'];
 
 export class CardConfigError extends Error {
   /** @param {string[]} errors */
@@ -51,6 +52,25 @@ export function validateCards(cards, board) {
     if (e.type === 'repairs' && !isPositiveInt(e.perLevel)) {
       errors.push(`${where} perLevel 必须是正整数，实际为 ${e.perLevel}`);
     }
+    if (e.type === 'choice') {
+      // 第一个选项是稳妥选项，必须总能选（AI 兜底和玩家没得选时都用它）
+      if (!Array.isArray(e.options) || e.options.length < 2) errors.push(`${where} 至少要有 2 个选项`);
+      else {
+        e.options.forEach((o, k) => {
+          const out = o?.outcome;
+          if (typeof o?.label !== 'string' || !OUTCOME_TYPES.includes(out?.type)) {
+            errors.push(`${where} 选项[${k}] 无效`);
+            return;
+          }
+          if (out.type === 'gain' && !isPositiveInt(out.amount)) errors.push(`${where} 选项[${k}] amount 必须是正整数`);
+          if (out.type === 'gamble') {
+            if (!(Number.isInteger(out.target) && out.target >= 3 && out.target <= 12)) errors.push(`${where} 选项[${k}] target 必须在 3–12`);
+            if (!isPositiveInt(out.win) || !isPositiveInt(out.lose)) errors.push(`${where} 选项[${k}] win、lose 必须是正整数`);
+          }
+        });
+        if (e.options[0]?.outcome?.type !== 'gain') errors.push(`${where} 第一个选项必须是稳妥的 gain`);
+      }
+    }
   });
   return errors;
 }
@@ -96,7 +116,8 @@ export function drawCard({ state, cards, bus }, playerId, deck) {
  * @returns {{ kind: 'done' }
  *   | { kind: 'charge', creditorId: string[] | null, amount: number }
  *   | { kind: 'move', steps: number }
- *   | { kind: 'jail' }}
+ *   | { kind: 'jail' }
+ *   | { kind: 'choice' }} choice 表示等玩家选择，见 systems/choice.js
  */
 export function applyCard({ state, board, bus }, playerId, card) {
   const player = state.players.find((p) => p.id === playerId);
@@ -142,6 +163,9 @@ export function applyCard({ state, board, bus }, playerId, card) {
     case 'jailFree':
       player.jailFreeCards.push(card.id);
       return { kind: 'done' };
+
+    case 'choice':
+      return { kind: 'choice' };
 
     case 'repairs': {
       const levels = Object.values(state.properties)

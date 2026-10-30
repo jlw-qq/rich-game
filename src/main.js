@@ -83,6 +83,7 @@ const EVENT_SOUNDS = {
   diceRolled: 'dice',
   propertyBought: 'buy',
   propertyUpgraded: 'buy',
+  gambleRolled: 'dice',
   tradeAccepted: 'buy',
   passedStart: 'coin',
   cashGained: 'coin',
@@ -92,7 +93,7 @@ const EVENT_SOUNDS = {
   gameOver: 'win',
 };
 /** 需要醒目显示的日志 */
-const HIGHLIGHT_EVENTS = new Set(['turnStarted', 'playerBankrupt', 'gameOver', 'debtPending', 'tradeProposed']);
+const HIGHLIGHT_EVENTS = new Set(['turnStarted', 'playerBankrupt', 'gameOver', 'debtPending', 'tradeProposed', 'choiceOffered', 'gambleRolled']);
 
 /** AI 每步操作之间的间隔（毫秒），按播放倍速缩短 */
 const AI_DELAY_MS = 600;
@@ -270,7 +271,7 @@ function startSession(state, intro) {
   const animator = createAnimator({
     state,
     tileIds: board.tiles.map((t) => t.id),
-    describePopup: (type, payload) => describe(type, payload, { state, board, rules }),
+    describePopup: (type, payload) => describe(type, payload, { state, board, rules, cards: CARDS }),
     reducedMotion: reducedMotion.matches,
     onEvent(type, payload) {
       const text = formatEvent(type, payload, fmtCtx);
@@ -284,7 +285,7 @@ function startSession(state, intro) {
   animator.setSpeed(speed);
   animator.setCalm(state.players.every((p) => p.isAI));
   bus.on('*', animator.handle);
-  const driver = createAiDriver({ game, state, board, rules });
+  const driver = createAiDriver({ game, state, board, rules, cards: CARDS });
 
   session = { state, game, animator, driver, rules, aiTimer: null };
   seenLandings = 0;
