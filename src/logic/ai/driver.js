@@ -32,7 +32,9 @@ function signature(state) {
  *   decide?: typeof decideAction,
  *   maxStepsPerTurn?: number,
  *   cards?: object[],
- * }} options decide 可替换，便于测试兜底逻辑；cards 为卡牌配置（城市事件选项要用）
+ *   controls?: (player: object) => boolean,
+ * }} options decide 可替换，便于测试兜底逻辑；cards 为卡牌配置（城市事件选项要用）；
+ *   controls 决定哪些玩家由 AI 操作，默认是 AI 玩家（联网时掉线或超时的玩家也交给 AI）
  */
 export function createAiDriver({
   game,
@@ -42,6 +44,7 @@ export function createAiDriver({
   decide = decideAction,
   maxStepsPerTurn = DEFAULT_MAX_STEPS_PER_TURN,
   cards = [],
+  controls = (player) => player.isAI,
 }) {
   const view = { state, board, rules, cards };
   const stats = { steps: 0, fallbacks: 0 };
@@ -52,7 +55,8 @@ export function createAiDriver({
   function isAiTurn() {
     if (state.phase === P.GAME_OVER) return false;
     const id = game.actingPlayerId();
-    return state.players.find((p) => p.id === id)?.isAI === true;
+    const player = state.players.find((p) => p.id === id);
+    return player !== undefined && controls(player) === true;
   }
 
   /** 卖光建筑、抵押全部地产，确保接下来付款或破产必有一个成功 */

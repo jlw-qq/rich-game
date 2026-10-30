@@ -83,6 +83,11 @@ function challengeView(current) {
   const { state } = current;
   if (!state.challenge) return null;
   if (current.challengeView) return current.challengeView;
+  // 联网对局只显示挑战码，不记本机成绩（成绩按本机第一位人类玩家算，联网时不适用）
+  if (current.online) {
+    current.challengeView = { ...state.challenge, score: null, best: null, newBest: false };
+    return current.challengeView;
+  }
   const score = challengeScore({ state, board });
   const best = bestScore(state.challenge.code);
   const newBest = score !== null && isBetterScore(score, best);
@@ -266,14 +271,24 @@ function autosave() {
   }
 }
 
+/** 联网对局里现在不该自己操作：轮到别人 */
+const notMyTurn = (s) => Boolean(s.online) && s.game.actingPlayerId() !== s.online.me;
+
 function renderPanel() {
   if (!session) return;
-  const { state, game, animator, driver } = session;
-  // AI 回合中人类按钮全部禁用
-  panel.render({ state, game, board, busy: animator.busy || driver.isAiTurn(), rules: session.rules });
+  const { state, game, animator, driver, online } = session;
+  // AI 回合中、联网时轮到别人时，人类按钮全部禁用
+  panel.render({ state, game, board, busy: animator.busy || driver.isAiTurn() || notMyTurn(session), rules: session.rules, me: online?.me ?? null });
   if (state.phase === PHASES.GAME_OVER) results.show({ rows: computeRanking({ state, board }), state, challenge: challengeView(session) });
   else results.hide();
-  if (!animator.busy) autosave();
+  if (!animator.busy) {
+    // 联网对局存在服务器上；动画播完告诉服务器，服务器等大家都看完再继续
+    if (!online) autosave();
+    else if (online.acked < online.seq) {
+      online.acked = online.seq;
+      net?.conn.send({ t: 'ready', seq: online.seq });
+    }
+  }
   scheduleAi();
 }
 
@@ -292,8 +307,13 @@ function scheduleAi() {
   }, (reducedMotion.matches ? AI_DELAY_MS / 3 : AI_DELAY_MS) / speed);
 }
 
-/** 用一份状态（新开局或读档）建立对局 */
-function startSession(state, intro) {
+/**
+ * 用一份状态（新开局、读档或联网）建立对局。
+ * @param {object} state
+ * @param {string[]} intro 开局日志
+ * @param {{ me: string } | null} [online] 联网对局：对局在服务器上运行，本机只播放服务器发来的事件
+ */
+function startSession(state, intro, online = null) {
   if (session?.aiTimer) clearTimeout(session.aiTimer);
   const bus = createEventBus({ onError: (err) => console.error('事件监听器出错', err) });
   // 规则跟着这一局的模式走（旧存档迁移后为经典模式）
@@ -319,9 +339,22 @@ function startSession(state, intro) {
   animator.setSpeed(speed);
   animator.setCalm(state.players.every((p) => p.isAI));
   bus.on('*', animator.handle);
-  const driver = createAiDriver({ game, state, board, rules, cards: CARDS });
+  // 联网时 AI 在服务器上走，本机不驱动任何 AI
+  const driver = createAiDriver({ game, state, board, rules, cards: CARDS, ...(online && { controls: () => false }) });
 
-  session = { state, game, animator, driver, rules, aiTimer: null, challengeView: null };
+  session = {
+    state,
+    game,
+    bus,
+    animator,
+    driver,
+    rules,
+    aiTimer: null,
+    challengeView: null,
+    /** seq：收到的最新一批；acked：已经告诉服务器播完的一批 */
+    online: online && { me: online.me, seq: 0, acked: 0 },
+  };
+  $('export').disabled = Boolean(online);
   seenLandings = 0;
   selection.clear();
   selection.setHover(null);
@@ -399,6 +432,7 @@ function leaveToSetup(options) {
   session = null;
   results.hide();
   $('game').hidden = true;
+  $('export').disabled = false;
   showSetup(options);
 }
 
@@ -443,13 +477,23 @@ async function importFile(file) {
  * @returns {{ ok: boolean, error?: string } | undefined} 逻辑层操作的结果；非逻辑层操作返回 undefined
  */
 function dispatch(action) {
+  if (session?.online) {
+    if (action.kind === 'newGame') return leaveRoom();
+    if (action.kind === 'rematch') return net?.conn.send({ t: 'toLobby' });
+  }
   if (action.kind === 'newGame') return leaveToSetup();
   if (action.kind === 'rematch') return session && startGame(playerSetupOf(session.state), session.state.mode);
-  // 动画播放中或 AI 回合，忽略人类操作
-  if (!session || session.animator.busy || session.driver.isAiTurn()) return { ok: false, error: '现在不能操作' };
+  // 动画播放中、AI 回合或联网时轮到别人，忽略操作
+  if (!session || session.animator.busy || session.driver.isAiTurn() || notMyTurn(session)) return { ok: false, error: '现在不能操作' };
   if (action.kind === 'openTrade') {
     tradeDialog.open({ state: session.state, board, playerId: session.game.actingPlayerId() });
     return;
+  }
+  if (session.online) {
+    // 交给服务器执行，结果随下一条 update 回来；被拒绝时服务器回 error，显示在日志里
+    net?.conn.send({ t: 'action', action });
+    panel.setBusy(true);
+    return { ok: true };
   }
   const result = performAction(session.game, action);
   if (!result.ok) {
@@ -514,22 +558,68 @@ function onNetMessage(msg) {
   if (net) net.waiting = null;
   if (msg.t === 'room') {
     waiting?.(null);
+    // 对局结束、房主带大家回到房间
+    if (session?.online && msg.room.phase === 'lobby') endOnlineSession();
+    // 对局中其他人进出时房间也会更新，只在大厅里显示
+    if (session?.online) return;
     setup.hide();
     lobby.setRoom(msg.room);
   } else if (msg.t === 'error') {
     if (waiting) waiting(String(msg.message));
-    else lobby.showError(String(msg.message));
+    else if (session?.online) {
+      log.add(String(msg.message), 'error');
+      sound.play('error');
+      renderPanel();
+    } else lobby.showError(String(msg.message));
   } else if (msg.t === 'started') {
-    lobby.showNotice('所有人已就位，对局已在服务器上开始。联网下棋的操作在下一步接入。');
+    if (net) net.me = String(msg.you);
+  } else if (msg.t === 'update') {
+    applyUpdate(msg);
   }
 }
+
+/** 收到服务器的一批事件和最新状态：第一批时建立对局，之后原地替换状态并播放事件 */
+function applyUpdate(msg) {
+  if (!net?.me || !msg.state || typeof msg.state !== 'object' || !Array.isArray(msg.events)) return;
+  if (!session?.online) {
+    lobby.hide();
+    const names = msg.state.players.map((p) => p.name).join('、');
+    startSession(msg.state, [`联网对局开始：${names}`, `${MODES[msg.state.mode]?.name ?? ''} · 挑战码 ${msg.state.challenge?.code ?? '无'}`], { me: net.me });
+  } else {
+    // 对局、动画、面板都拿着同一个 state 对象，所以原地替换内容
+    const { state } = session;
+    for (const key of Object.keys(state)) delete state[key];
+    Object.assign(state, msg.state);
+  }
+  session.online.seq = msg.seq;
+  if (msg.notice) log.add(String(msg.notice), 'highlight');
+  for (const [type, payload] of msg.events) session.bus.emit(type, payload);
+  if (document.hidden) catchUp();
+  if (session.animator.busy) {
+    panel.setBusy(true);
+    requestFrame();
+  } else renderPanel();
+}
+
+/**
+ * 页面在后台时浏览器暂停 requestAnimationFrame，动画永远播不完，服务器会一直等这位玩家。
+ * 联网对局里此时直接播完排队的动画（日志照常写入），回到前台时看到的是最新局面。
+ */
+function catchUp() {
+  if (session?.online) session.animator.skipAll();
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) catchUp();
+  else requestFrame();
+});
 
 function onNetClose(reason) {
   const waiting = net?.waiting;
   net = null;
   if (waiting) return waiting(reason);
   lobby.hide();
-  showSetup({ message: reason });
+  if (session?.online) leaveToSetup({ message: reason });
+  else showSetup({ message: reason });
 }
 
 /**
@@ -550,6 +640,15 @@ async function request(msg) {
   });
 }
 
+/** 离开联网对局的画面（不离开房间） */
+function endOnlineSession() {
+  tradeDialog.close();
+  session = null;
+  results.hide();
+  $('game').hidden = true;
+  $('export').disabled = false;
+}
+
 function leaveRoom() {
   if (net) {
     net.conn.send({ t: 'leave' });
@@ -557,6 +656,7 @@ function leaveRoom() {
     net = null;
   }
   lobby.hide();
+  if (session?.online) endOnlineSession();
   showSetup();
 }
 
@@ -659,7 +759,7 @@ zoomOutButton.addEventListener('click', () => {
 });
 
 $('export').addEventListener('click', downloadSave);
-$('quit').addEventListener('click', () => leaveToSetup());
+$('quit').addEventListener('click', () => (session?.online ? leaveRoom() : leaveToSetup()));
 
 showSetup();
 resize();

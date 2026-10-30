@@ -213,3 +213,32 @@ describe('落点光边与地产特效交棒', () => {
     expect(samples[0]).toBeCloseTo(0);
   });
 });
+
+describe('立即播完（后台标签页跟上联网对局）', () => {
+  it('棋子到终点、日志照常触发、不留特效和结果卡，并通知空闲', () => {
+    const seen = [];
+    let idle = 0;
+    const a = createAnimator({
+      state,
+      tileIds: Array.from({ length: 40 }, (_, i) => `t${i}`),
+      describePopup: (type) => (type === 'propertyBought' ? { title: '买下' } : null),
+      onEvent: (type) => seen.push(type),
+      onIdle: () => (idle += 1),
+    });
+    a.handle({ playerId: 'p1', dice: [3, 4], total: 7 }, 'diceRolled');
+    a.handle({ playerId: 'p1', from: 0, to: 7, steps: 7, path: [1, 2, 3, 4, 5, 6, 7] }, 'playerMoved');
+    a.handle({ playerId: 'p1', tileId: 't7', price: 600 }, 'propertyBought');
+    a.skipAll();
+    expect(seen).toEqual(['diceRolled', 'playerMoved', 'propertyBought']);
+    expect(a.busy).toBe(false);
+    expect(idle).toBe(1);
+    expect(a.dice.values).toEqual([3, 4]);
+    expect(a.popup).toBeNull();
+    expect(a.effects.size).toBe(0);
+    expect(a.floaters).toEqual([]);
+    expect(a.landings).toBe(1);
+    // 再调一次没有事件，不重复通知
+    a.skipAll();
+    expect(idle).toBe(1);
+  });
+});

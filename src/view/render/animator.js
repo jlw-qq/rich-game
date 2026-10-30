@@ -272,9 +272,42 @@ export function createAnimator({ state, tileIds = [], describePopup = () => null
     return busy || floaters.length > 0 || highlighting || bouncing || effects.size > 0 || popup !== null;
   }
 
+  /**
+   * 立即播完所有排队的事件：棋子、骰子直接到终点，日志和音效照常触发，不留浮字、特效和结果卡。
+   * 页面在后台时浏览器不再调用 requestAnimationFrame，联网对局用它跟上服务器。
+   */
+  function skipAll() {
+    for (;;) {
+      if (!current) {
+        const next = queue.shift();
+        if (!next) break;
+        onEvent(next.type, next.payload);
+        const task = makeTask(next.type, next.payload);
+        if (!task) continue;
+        current = task;
+      }
+      current.update(1);
+      if (current.landing !== undefined) {
+        focus = { index: current.landing, at: lastNow };
+        landings += 1;
+      }
+      current = null;
+    }
+    floaters = [];
+    effects.clear();
+    popup = null;
+    diceLandedAt = null;
+    dice.bounce = diceBounce(1);
+    if (pendingIdle) {
+      pendingIdle = false;
+      onIdle();
+    }
+  }
+
   return {
     handle,
     tick,
+    skipAll,
     tokens,
     dice,
     /** @param {number} value 播放倍速，正数；只影响之后开始的动画 */

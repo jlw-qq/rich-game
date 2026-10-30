@@ -1,7 +1,7 @@
 /**
  * 逻辑层：联网消息检查、限流、房间与座位。
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { MAX_MESSAGE_BYTES, PROTOCOL_VERSION, ROOM_CODE_ALPHABET, parseClientMessage } from '../../../src/logic/net/protocol.js';
 import { createRateLimiter } from '../../../src/logic/net/rateLimit.js';
 import { createLobby } from '../../../src/logic/net/room.js';
@@ -80,6 +80,8 @@ function setup({ maxRooms } = {}) {
 }
 
 describe('房间', () => {
+  afterEach(() => vi.useRealTimers());
+
   it('建房、加入、房主设置座位和模式，所有人看到同一个房间', () => {
     const { send, last } = setup();
     const room = send('a', 'create', { name: ' 小红 ' }).room;
@@ -132,17 +134,20 @@ describe('房间', () => {
   });
 
   it('开局：去掉关闭的座位，AI 避开玩家的名字，每人知道自己的玩家 id，状态合法', () => {
-    const { send, last, lobby } = setup();
+    const { send, last, lobby, inbox } = setup();
     const { code } = send('a', 'create', { name: '小蓝' }).room;
     send('a', 'setSeat', { index: 1, kind: 'easy' });
     send('a', 'setSeat', { index: 3, kind: 'open' });
     send('b', 'join', { code, name: '阿明' });
     send('a', 'setSeat', { index: 4, kind: 'normal' });
+    vi.useFakeTimers();
     send('a', 'start');
-    const started = last('a');
-    expect(started).toMatchObject({ t: 'started', you: 'p1' });
-    expect(last('b')).toMatchObject({ t: 'started', you: 'p3' });
-    const { state } = started;
+    const started = (id) => inbox.get(id).find((m) => m.t === 'started');
+    expect(started('a')).toEqual({ t: 'started', you: 'p1' });
+    expect(started('b')).toEqual({ t: 'started', you: 'p3' });
+    // 开局后紧接着收到第一批（空的）更新，带初始状态
+    expect(last('a')).toMatchObject({ t: 'update', seq: 1, events: [] });
+    const { state } = last('a');
     expect(state.players.map((p) => p.name)).toEqual(['小蓝', '小红', '阿明', '小黄']);
     expect(state.players.map((p) => (p.isAI ? p.aiLevel : 'human'))).toEqual(['human', 'easy', 'human', 'normal']);
     expect(validateState(state, { board, rules: RULES, cards: CARDS })).toEqual([]);
@@ -177,6 +182,7 @@ describe('房间', () => {
     const { send, last, lobby } = setup();
     const { code } = send('a', 'create', { name: '小红' }).room;
     send('b', 'join', { code, name: '小蓝' });
+    vi.useFakeTimers();
     send('a', 'start');
     lobby.disconnect('a');
     expect(last('b').room.seats[0]).toEqual({ kind: 'gone' });

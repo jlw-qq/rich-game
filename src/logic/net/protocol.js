@@ -10,12 +10,17 @@
  *   setMode { mode }           房主改模式
  *   setSeat { index, kind }    房主改座位：open 空位 / closed 关闭 / normal、easy AI
  *   start {}                   房主开始（不能还有空位）
+ *   action { action }          对局中的一次操作，格式同 core/actions.js
+ *   ready { seq }              第 seq 批事件已经播完
+ *   toLobby {}                 对局结束后，房主带大家回房间
  * 服务器 → 客户端：
  *   room { room }              房间最新情况，见 room.js 的 roomView
- *   started { state, you }     对局开始：初始状态和你的玩家 id
+ *   started { you }            对局开始，你的玩家 id；紧接着会收到第一条 update
+ *   update { seq, events, state, notice? }  见 match.js
  *   left {}                    已离开房间
  *   error { message }          操作被拒绝的原因
  */
+import { ACTION_KINDS } from '../core/actions.js';
 
 export const PROTOCOL_VERSION = 1;
 /** 单条消息的上限（字节）。现在的消息都很短，后面的交易消息也远小于这个数 */
@@ -28,6 +33,30 @@ export const SEAT_SETTINGS = ['open', 'closed', 'normal', 'easy'];
 
 const fail = (error) => ({ ok: false, error });
 const isStr = (v, max) => typeof v === 'string' && v.length <= max;
+const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * 对局操作：只拷贝认识的字段。交易内容的细节（地产、现金是否有效）由 systems/trade.js 逐项校验。
+ * @returns {object | null}
+ */
+function cleanAction(v) {
+  if (!isPlainObject(v) || !ACTION_KINDS.includes(v.kind)) return null;
+  const action = { kind: v.kind };
+  if (v.tileId !== undefined) {
+    if (!isStr(v.tileId, 40)) return null;
+    action.tileId = v.tileId;
+  }
+  if (v.index !== undefined) {
+    if (!(Number.isInteger(v.index) && v.index >= 0 && v.index < 16)) return null;
+    action.index = v.index;
+  }
+  if (v.trade !== undefined) {
+    if (!isPlainObject(v.trade)) return null;
+    const { toId, give, take } = v.trade;
+    action.trade = { toId, give, take };
+  }
+  return action;
+}
 
 /** 每种消息：字段名 → 检查函数 */
 const SCHEMAS = {
@@ -37,6 +66,9 @@ const SCHEMAS = {
   setMode: { mode: (v) => isStr(v, 20) },
   setSeat: { index: (v) => Number.isInteger(v) && v >= 0 && v < 16, kind: (v) => SEAT_SETTINGS.includes(v) },
   start: {},
+  action: { action: (v) => cleanAction(v) !== null },
+  ready: { seq: (v) => Number.isInteger(v) && v >= 0 },
+  toLobby: {},
 };
 export const CLIENT_MESSAGE_TYPES = Object.keys(SCHEMAS);
 
@@ -60,7 +92,7 @@ export function parseClientMessage(text) {
   const msg = { t: data.t };
   for (const [key, check] of Object.entries(SCHEMAS[data.t])) {
     if (!check(data[key])) return fail(`消息字段无效: ${key}`);
-    msg[key] = data[key];
+    msg[key] = key === 'action' ? cleanAction(data[key]) : data[key];
   }
   return { ok: true, msg };
 }

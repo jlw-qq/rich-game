@@ -4,12 +4,15 @@
  *
  * 座位固定 5 个（等于最大人数）：human 玩家 / open 空位 / closed 关闭 / normal、easy AI。
  * 开局时去掉关闭的座位，其余按座位顺序成为 p1、p2……；有空位时不能开局。
- * 对局中有人断开时座位标为 gone（掉线代打和重连在后续步骤处理）。
+ * 对局交给 match.js 在服务器上运行。对局中有人断开时座位标为 gone，由 AI 代打到结束。
+ * 对局结束后房主可以带大家回到房间（gone 的座位变回空位），再开一局。
  */
 import { MAX_NAME_LENGTH, createInitialState } from '../core/gameState.js';
 import { createBoard } from '../core/board.js';
 import { encodeChallenge, seatKinds } from '../systems/challenge.js';
 import { ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH, normalizeRoomCode } from './protocol.js';
+import { createMatch } from './match.js';
+import { PHASES } from '../core/turnMachine.js';
 import { TILES, GROUPS } from '../../data/config/board.js';
 import { RULES } from '../../data/config/rules.js';
 import { CARDS } from '../../data/config/cards.js';
@@ -27,9 +30,10 @@ const board = createBoard({ tiles: TILES, groups: GROUPS, rules: RULES });
  *   randomInt: (max: number) => number,
  *   send: (clientId: string, msg: object) => void,
  *   maxRooms?: number,
- * }} options randomInt 返回 [0, max) 的整数
+ *   matchOptions?: { aiDelayMs?: number, turnTimeoutMs?: number, readyTimeoutMs?: number },
+ * }} options randomInt 返回 [0, max) 的整数；matchOptions 传给 createMatch（测试时缩短等待）
  */
-export function createLobby({ randomInt, send, maxRooms = MAX_ROOMS }) {
+export function createLobby({ randomInt, send, maxRooms = MAX_ROOMS, matchOptions = {} }) {
   /** @type {Map<string, object>} 房间码 → 房间 */
   const rooms = new Map();
   /** @type {Map<string, string>} 客户端 → 所在房间码 */
@@ -78,7 +82,7 @@ export function createLobby({ randomInt, send, maxRooms = MAX_ROOMS }) {
     if (!code) return error(clientId, '服务器房间已满，请稍后再试');
     const seats = Array.from({ length: SEAT_COUNT }, (_, i) => ({ kind: i === 1 ? 'open' : 'closed' }));
     seats[0] = { kind: 'human', clientId, name: n.name };
-    const room = { code, mode: DEFAULT_MODE, phase: 'lobby', hostId: clientId, seats, state: null, playerIds: null };
+    const room = { code, mode: DEFAULT_MODE, phase: 'lobby', hostId: clientId, seats, match: null, playerIds: null };
     rooms.set(code, room);
     roomOf.set(clientId, code);
     broadcast(room);
@@ -105,7 +109,12 @@ export function createLobby({ randomInt, send, maxRooms = MAX_ROOMS }) {
     if (!room) return;
     const index = room.seats.findIndex((s) => s.clientId === clientId);
     room.seats[index] = { kind: room.phase === 'lobby' ? 'open' : 'gone' };
+    if (room.phase === 'playing') {
+      room.match.leave(room.playerIds.get(clientId));
+      room.playerIds.delete(clientId);
+    }
     if (humans(room).length === 0) {
+      room.match?.dispose();
       rooms.delete(room.code);
       return;
     }
@@ -153,15 +162,57 @@ export function createLobby({ randomInt, send, maxRooms = MAX_ROOMS }) {
     const seed = randomInt(2 ** 32);
     const rules = rulesFor(room.mode, players.length);
     const challenge = { code: encodeChallenge({ mode: room.mode, kinds: seatKinds(players), seed }), daily: null };
-    room.state = createInitialState({ board, rules, cards: CARDS, players, seed, mode: room.mode, challenge });
+    const state = createInitialState({ board, rules, cards: CARDS, players, seed, mode: room.mode, challenge });
     room.phase = 'playing';
     /** 客户端 → 玩家 id */
-    room.playerIds = new Map(seated.flatMap((s, i) => (s.kind === 'human' ? [[s.clientId, room.state.players[i].id]] : [])));
+    room.playerIds = new Map(seated.flatMap((s, i) => (s.kind === 'human' ? [[s.clientId, state.players[i].id]] : [])));
+    room.match = createMatch({
+      ...matchOptions,
+      state,
+      humans: [...room.playerIds.values()],
+      broadcast: (msg) => {
+        for (const id of room.playerIds.keys()) send(id, msg);
+      },
+    });
     broadcast(room);
-    for (const [id, playerId] of room.playerIds) send(id, { t: 'started', state: room.state, you: playerId });
+    for (const [id, playerId] of room.playerIds) send(id, { t: 'started', you: playerId });
+    room.match.begin();
   }
 
-  const HANDLERS = { create, join, setMode, setSeat, start };
+  /** 对局中的房间和这位玩家的 id */
+  function playing(clientId) {
+    const room = rooms.get(roomOf.get(clientId));
+    if (!room || room.phase !== 'playing') return { error: '你不在对局中' };
+    return { room, playerId: room.playerIds.get(clientId) };
+  }
+
+  function action(clientId, msg) {
+    const { room, playerId, error: e } = playing(clientId);
+    if (e) return error(clientId, e);
+    const r = room.match.act(playerId, msg.action);
+    if (!r.ok) error(clientId, r.error);
+  }
+
+  function ready(clientId, msg) {
+    const { room, playerId } = playing(clientId);
+    room?.match.ready(playerId, msg.seq);
+  }
+
+  /** 对局结束后回到房间：离开的人的座位变回空位，设置保留 */
+  function toLobby(clientId) {
+    const room = rooms.get(roomOf.get(clientId));
+    if (!room || room.phase !== 'playing') return error(clientId, '你不在对局中');
+    if (room.hostId !== clientId) return error(clientId, '只有房主可以带大家回房间');
+    if (room.match.state.phase !== PHASES.GAME_OVER) return error(clientId, '对局还没结束');
+    room.match.dispose();
+    room.match = null;
+    room.playerIds = null;
+    room.phase = 'lobby';
+    room.seats = room.seats.map((s) => (s.kind === 'gone' ? { kind: 'open' } : s));
+    broadcast(room);
+  }
+
+  const HANDLERS = { create, join, setMode, setSeat, start, action, ready, toLobby };
 
   return {
     /**

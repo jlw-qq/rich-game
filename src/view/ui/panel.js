@@ -26,6 +26,8 @@ const ALWAYS_ENABLED = new Set(['rematch', 'newGame']);
  * }} roots goal 为显示剩余轮数和目标资产的元素
  */
 export function createPanel({ players, status, actions, assets, onAction, maxTradesPerTurn, goal = null }) {
+  /** 联网对局里自己的玩家 id，本机对局为 null */
+  let viewer = null;
   const button = (action, disabled) =>
     el('button', {
       type: 'button',
@@ -166,8 +168,8 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
         return [{ kind: 'endTurn', label: state.doublesCount > 0 && !player.inJail ? '再掷一次' : '结束回合', primary: true }];
       case 'gameOver':
         return [
-          { kind: 'rematch', label: '再来一局', primary: true },
-          { kind: 'newGame', label: '返回设置' },
+          { kind: 'rematch', label: viewer ? '回到房间' : '再来一局', primary: true },
+          { kind: 'newGame', label: viewer ? '返回菜单' : '返回设置' },
         ];
       default:
         return [];
@@ -219,18 +221,21 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
   }
 
   /**
-   * @param {{ state: object, game: object, board: object, busy: boolean }} view
+   * @param {{ state: object, game: object, board: object, busy: boolean, rules?: object, me?: string | null }} view
+   *   rules 为这一局的规则，用来显示剩余轮数和目标资产；
+   *   me 为联网对局里自己的玩家 id（本机对局为 null），轮到别人时显示在等谁
    */
-  /**
-   * @param {{ state: object, game: object, board: object, busy: boolean, rules?: object }} view
-   *   rules 为这一局的规则，用来显示剩余轮数和目标资产
-   */
-  function render({ state, game, board, busy, rules }) {
+  function render({ state, game, board, busy, rules, me = null }) {
+    viewer = me;
     renderPlayers(state, game);
     renderGoal(state, game, rules);
     const acting = state.players.find((p) => p.id === game.actingPlayerId());
-    status.textContent =
-      acting?.isAI && state.phase !== 'gameOver' ? `${acting.name}（AI）正在操作…` : statusText(state, game, board);
+    const waiting = me && acting && acting.id !== me && state.phase !== 'gameOver';
+    status.textContent = waiting
+      ? `等待 ${acting.name}${acting.isAI ? '（AI）' : ''} 操作…`
+      : acting?.isAI && state.phase !== 'gameOver'
+        ? `${acting.name}（AI）正在操作…`
+        : statusText(state, game, board);
     actions.replaceChildren(...mainActions(state, game).map((a) => button(a, (busy && !ALWAYS_ENABLED.has(a.kind)) || Boolean(a.disabled))));
     renderAssets(state, game, board, busy, rules);
   }
