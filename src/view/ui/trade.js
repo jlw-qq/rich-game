@@ -118,5 +118,8 @@ export function createTradeDialog({ root, onSubmit }) {
   return {
     open,
     close: () => root.open && root.close(),
+    get isOpen() {
+      return root.open;
+    },
   };
 }

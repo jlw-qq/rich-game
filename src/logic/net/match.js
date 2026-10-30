@@ -6,6 +6,8 @@
  *
  * 节奏：客户端播完一批事件后回 ready(seq)。服务器等所有在线玩家都 ready（最多等 readyTimeoutMs），
  * 再让 AI 走下一步，或开始给人类玩家计时。这样动画慢的人也不会被甩在后面，计时也不会在别人还在看动画时就开始。
+ * 等待超时还没回 ready 的玩家（网很慢，或连接已经断了但服务器还没发现）记为落后，之后不再等他，
+ * 直到他回了最新一批的 ready；否则一个断掉的连接会让每一步都多等 readyTimeoutMs。
  * 人类玩家一步超过 turnTimeoutMs 没操作，AI 替他走这一步；掉线的玩家由 AI 代打，重新连上后接着自己操作。
  * 所有人类玩家都不在线时对局暂停（AI 也不走），有人回来再继续。
  */
@@ -72,6 +74,8 @@ export function createMatch({
   let seq = startSeq;
   /** 还没回 ready 的在线玩家 */
   let waitingFor = new Set();
+  /** 上次等待超时还没跟上的玩家，暂时不等 */
+  const lagging = new Set();
   let timer = null;
   let disposed = false;
 
@@ -92,11 +96,16 @@ export function createMatch({
     events = [];
     broadcast(msg);
     onUpdate();
-    waitingFor = new Set(online());
+    waitingFor = new Set(online().filter((id) => !lagging.has(id)));
     clearTimer();
     if (over()) return;
     if (waitingFor.size === 0) next();
-    else timer = setTimeout(next, readyTimeoutMs);
+    else timer = setTimeout(readyTimedOut, readyTimeoutMs);
+  }
+
+  function readyTimedOut() {
+    for (const id of waitingFor) lagging.add(id);
+    next();
   }
 
   /** 所有人都看完了：轮到 AI 就走一步，轮到人类就开始计时；没人在线时暂停 */
@@ -147,7 +156,10 @@ export function createMatch({
     },
     /** 客户端播完了第 n 批事件 */
     ready(playerId, n) {
-      if (n !== seq || !waitingFor.has(playerId)) return;
+      if (n !== seq) return;
+      // 落后的玩家跟上了最新一批：之后照常等他
+      lagging.delete(playerId);
+      if (!waitingFor.has(playerId)) return;
       waitingFor.delete(playerId);
       if (waitingFor.size === 0) next();
     },
@@ -162,6 +174,7 @@ export function createMatch({
       if (disposed) return;
       if (isOnline) gone.delete(playerId);
       else gone.add(playerId);
+      lagging.delete(playerId);
       flush(notice);
     },
     dispose() {

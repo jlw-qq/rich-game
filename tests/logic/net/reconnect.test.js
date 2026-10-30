@@ -77,12 +77,12 @@ describe('凭令牌重连', () => {
     const b2 = net.client('b2');
     b2.send('resume', b.seat);
     expect(net.kicked).toEqual(['b']);
-    // 旧连接之后断开不影响新连接的座位
-    net.lobby.disconnect('b');
+    // 被顶替的旧连接随即断开，这次断开不会让出新连接的座位
+    expect(b.closed).toBe(true);
     net.pump();
     expect(a.inbox.at(-1).room.seats[1].online).toBe(true);
-    b.send('setMode', { mode: 'classic' });
-    expect(b.errors.at(-1)).toContain('不在房间');
+    vi.advanceTimersByTime(HOLD_MS * 2);
+    expect(net.lobby.getRoom(a.seat.code).seats[1]).toMatchObject({ kind: 'human', clientId: 'b2' });
   });
 
   it('对局中掉线由 AI 代打，回来后拿到当前局面并接着自己操作', () => {

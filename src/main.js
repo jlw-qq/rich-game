@@ -626,6 +626,12 @@ function applyUpdate(msg) {
   }
   session.online.seq = msg.seq;
   if (msg.notice) log.add(String(msg.notice), 'highlight');
+  // 交易框开着时轮次已经过去（超时由 AI 代走等）：关掉，免得提交一笔过时的交易
+  const { state, game } = session;
+  if (tradeDialog.isOpen && !(state.phase === PHASES.AWAIT_ROLL && game.actingPlayerId() === session.online.me)) {
+    tradeDialog.close();
+    log.add('已经不是你的掷骰阶段，交易框已关闭', 'error');
+  }
   for (const [type, payload] of msg.events) session.bus.emit(type, payload);
   if (document.hidden) catchUp();
   if (session.animator.busy) {
