@@ -5,6 +5,7 @@
 import { PHASES as P } from '../core/turnMachine.js';
 import { calcRent, ownsFullGroup, redeemCost, rentAt } from '../systems/property.js';
 import { choiceOptions } from '../systems/choice.js';
+import { minBid } from '../systems/auction.js';
 
 /**
  * @typedef {{ state: object, board: object, rules: object }} View
@@ -257,6 +258,39 @@ function shouldBuy(view, player, tile, reserve) {
 }
 
 /**
+ * 拍卖心理价：标价的一定比例，能凑齐颜色组或能挡住对手凑齐时加价。
+ * 上限是现金减去安全现金（简单 AI 只留一半），所以不会把自己拍穷。
+ */
+function auctionLimit(view, player, tile, easy, rng) {
+  const { state, board } = view;
+  const group = board.getGroupTiles(tile.group).filter((t) => t.id !== tile.id);
+  const owners = group.map((t) => state.properties[t.id].ownerId);
+  let rate = easy ? 0.5 + rng.next() * 0.3 : 0.8;
+  if (owners.length > 0 && owners.every((o) => o === player.id)) rate += 0.5;
+  else if (owners.includes(player.id)) rate += 0.2;
+  // 别人差这一块就凑齐：值得多出一些把它挡下来
+  const other = owners[0];
+  if (!easy && owners.length > 0 && other && other !== player.id && owners.every((o) => o === other)) rate += 0.3;
+  const reserve = easy ? MIN_RESERVE / 2 : reserveFor(view, player.id);
+  return Math.min(Math.floor(tile.price * rate), player.cash - reserve);
+}
+
+/**
+ * 轮到出价：最低出价在心理价以内就跟，否则退出。加价幅度约为标价的 1/10（至少 100），
+ * 避免两个 AI 每口只加 100 来回拉锯太久。
+ */
+function auctionAction(view, player, easy, rng) {
+  const { state, board, rules } = view;
+  const tile = board.tiles.find((t) => t.id === state.auction.tileId);
+  const limit = auctionLimit(view, player, tile, easy, rng);
+  const least = minBid(view);
+  if (least > limit) return { kind: 'pass' };
+  const step = Math.max(rules.auctionMinRaise, Math.round(tile.price / 10 / 100) * 100);
+  const amount = state.auction.high === null ? least : Math.min(limit, state.auction.high + step);
+  return { kind: 'bid', amount: Math.max(least, amount) };
+}
+
+/**
  * @param {View} view
  * @param {string} playerId
  * @param {{ level?: 'easy' | 'normal', rng: { next: () => number } }} options
@@ -307,6 +341,9 @@ export function decideAction(view, playerId, { level = 'normal', rng }) {
 
     case P.AWAIT_TRADE:
       return respondTrade(view, player, easy);
+
+    case P.AWAIT_AUCTION:
+      return auctionAction(view, player, easy, rng);
 
     case P.AWAIT_CHOICE:
       return choiceAction(view, player, easy, rng);

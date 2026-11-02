@@ -151,6 +151,40 @@ export function validateState(state, { board, rules: baseRules, cards }) {
     err('非选择阶段存在待选的城市事件');
   }
 
+  // ---- 拍卖
+  const auction = state.auction;
+  if (state.phase === PHASES.AWAIT_AUCTION) {
+    if (!isPlainObject(auction)) err('拍卖阶段缺少拍卖数据');
+    else {
+      const tile = board.tiles.find((t) => t.id === auction.tileId);
+      if (tile?.type !== 'property') err('拍卖的格子不是地产');
+      else if (state.properties?.[tile.id]?.ownerId !== null) err('拍卖的地产已经有主人');
+      const current = isInt(idx) ? players[idx] : null;
+      if (auction.starterId !== current?.id) err('拍卖不是当前玩家发起的');
+      if (!(isInt(auction.start) && auction.start > 0)) err('起拍价无效');
+      const active = auction.active;
+      const aliveIds = new Set(alive.map((p) => p.id));
+      if (!Array.isArray(active) || active.length === 0 || new Set(active).size !== active.length || !active.every((id) => aliveIds.has(id))) {
+        err('拍卖在场玩家无效');
+      } else {
+        if (!(isInt(auction.turn) && auction.turn >= 0 && auction.turn < active.length)) err('拍卖轮次越界');
+        if (auction.high === null) {
+          if (auction.highId !== null) err('没有出价却有出价人');
+        } else {
+          const bidder = players.find((p) => p.id === auction.highId);
+          if (!(isInt(auction.high) && auction.high >= auction.start)) err('最高出价无效');
+          else if (!active.includes(auction.highId)) err('最高出价人不在场');
+          else if (bidder.cash < auction.high) err('最高出价人现金不足');
+          // 只剩最高出价者时拍卖已经结束，不会停在这里
+          if (active.length === 1) err('拍卖应已成交');
+          if (active[auction.turn] === auction.highId) err('轮到的人已经是最高出价者');
+        }
+      }
+    }
+  } else if (auction !== null) {
+    err('非拍卖阶段存在拍卖数据');
+  }
+
   // ---- 挑战码：存档里看不到原始种子，只核对模式和座位
   errors.push(...challengeErrors(state.challenge, { mode: state.mode, players }));
 

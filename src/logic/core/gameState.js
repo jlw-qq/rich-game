@@ -13,8 +13,9 @@ import { challengeErrors } from '../systems/challenge.js';
  * 版本 3：新增对局模式（mode），规则按模式取，见 data/config/modes.js
  * 版本 4：新增城市事件卡（pendingChoice、eventRngState），部分旧卡被替换
  * 版本 5：新增挑战码（challenge），见 systems/challenge.js
+ * 版本 6：新增地产拍卖（auction），见 systems/auction.js
  */
-export const STATE_VERSION = 5;
+export const STATE_VERSION = 6;
 export const MAX_NAME_LENGTH = 12;
 /** AI 难度 */
 export const AI_LEVELS = ['easy', 'normal'];
@@ -126,6 +127,8 @@ export function createInitialState({ board, rules, players, seed, cards = [], mo
     tradesThisTurn: 0,
     /** 等待选择的城市事件：{ playerId, cardId } */
     pendingChoice: null,
+    /** 正在进行的拍卖，见 systems/auction.js */
+    auction: null,
     /** 牌堆：卡牌 id 数组，从头抽 */
     decks,
     rngState: rng.getState(),
@@ -157,6 +160,8 @@ export function migrateState(state) {
   }
   // 旧对局的种子已经无从得知，不能补挑战码
   if (s.version === 4) s = { ...s, version: 5, challenge: null };
+  // 旧存档里不会有进行中的拍卖
+  if (s.version === 5) s = { ...s, version: 6, auction: null };
   return s;
 }
 

@@ -20,7 +20,8 @@ function signature(state) {
   const props = Object.values(state.properties).map((p) => `${p.ownerId ?? '-'}${p.level}${p.mortgaged ? 'm' : ''}`);
   const trade = state.pendingTrade ? JSON.stringify(state.pendingTrade) : '-';
   const choice = state.pendingChoice ? `${state.pendingChoice.cardId}` : '-';
-  return [state.phase, state.turn, state.currentPlayerIndex, state.doublesCount, state.tradesThisTurn, trade, choice, players.join('|'), props.join('')].join('#');
+  const auction = state.auction ? JSON.stringify(state.auction) : '-';
+  return [state.phase, state.turn, state.currentPlayerIndex, state.doublesCount, state.tradesThisTurn, trade, choice, auction, players.join('|'), props.join('')].join('#');
 }
 
 /**
@@ -83,6 +84,9 @@ export function createAiDriver({
         return game.chooseOption(0);
       case P.AWAIT_DECISION:
         return game.declineProperty();
+      case P.AWAIT_AUCTION:
+        // 退出一定合法，并且让拍卖向结束推进一步
+        return game.auctionPass(playerId);
       case P.AWAIT_PAYMENT: {
         const paid = game.payDebt();
         if (paid.ok) return paid;

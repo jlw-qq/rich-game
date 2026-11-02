@@ -33,6 +33,7 @@ export const DICE_BOUNCE_MS = 300;
  */
 const TILE_EFFECTS = {
   propertyBought: (p) => [[p.tileId, 'buy']],
+  auctionWon: (p) => [[p.tileId, 'buy']],
   propertyUpgraded: (p) => [[p.tileId, 'upgrade', p.level]],
   buildingSold: (p) => [[p.tileId, 'sell', p.level]],
   propertyMortgaged: (p) => [[p.tileId, 'mortgage']],
@@ -52,6 +53,7 @@ const CASH_DELTAS = {
   cashGained: (p) => [[p.playerId, p.amount]],
   passedStart: (p) => [[p.playerId, p.amount]],
   propertyBought: (p) => [[p.playerId, -p.price]],
+  auctionWon: (p) => [[p.playerId, -p.amount]],
   propertyUpgraded: (p) => [[p.playerId, -p.cost]],
   propertyRedeemed: (p) => [[p.playerId, -p.cost]],
   buildingSold: (p) => [[p.playerId, p.refund]],

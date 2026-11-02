@@ -11,6 +11,7 @@ import { performAction } from '../../../src/logic/core/actions.js';
 import { createRng } from '../../../src/logic/utils/rng.js';
 import { decideAction, reserveFor } from '../../../src/logic/ai/strategy.js';
 import { createAiDriver } from '../../../src/logic/ai/driver.js';
+import { declineNoAuction } from '../helpers.js';
 
 const board = createBoard({ tiles: TILES, groups: GROUPS, rules: RULES });
 const JAIL = TILES.findIndex((t) => t.type === 'jail');
@@ -58,7 +59,7 @@ describe('策略：普通难度', () => {
     const { game, decide } = setup({ rolls: [[1, 2]] });
     expect(decide()).toEqual({ kind: 'roll' });
     game.rollDice(); // 到银川，等待决策
-    game.declineProperty();
+    declineNoAuction(game);
     expect(decide()).toEqual({ kind: 'endTurn' });
   });
 
@@ -295,5 +296,5 @@ describe('AI 对战', () => {
       totalFallbacks += fallbacks;
     }
     expect(totalFallbacks).toBe(0);
-  });
+  }, 30_000);
 });

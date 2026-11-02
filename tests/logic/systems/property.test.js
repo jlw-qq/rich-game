@@ -17,6 +17,7 @@ import {
   upgradeProperty,
 } from '../../../src/logic/systems/property.js';
 import { charge, liquidateForBankruptcy } from '../../../src/logic/systems/bankruptcy.js';
+import { declineNoAuction } from '../helpers.js';
 
 const tile = (id) => TILES.find((t) => t.id === id);
 // 棕色组：西宁(1) 600 / 银川(3) 600；深蓝组：上海(37) / 北京(39)
@@ -82,7 +83,7 @@ describe('购买', () => {
     game.rollDice();
     expect(game.buyProperty().ok).toBe(false);
     expect(game.phase).toBe(P.AWAIT_DECISION);
-    expect(game.declineProperty().ok).toBe(true);
+    expect(declineNoAuction(game).ok).toBe(true);
     expect(state.properties.yinchuan.ownerId).toBeNull();
     expect(game.phase).toBe(P.TURN_END);
   });
@@ -343,7 +344,7 @@ describe('整局模拟（简易策略）', () => {
           break;
         }
         case P.AWAIT_DECISION:
-          if (!game.buyProperty().ok) expect(game.declineProperty().ok).toBe(true);
+          if (!game.buyProperty().ok) expect(declineNoAuction(game).ok).toBe(true);
           break;
         case P.AWAIT_PAYMENT: {
           const owned = TILES.filter((t) => state.properties[t.id]?.ownerId === me);

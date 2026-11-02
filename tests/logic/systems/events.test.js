@@ -8,6 +8,7 @@ import { createInitialState, GameSetupError } from '../../../src/logic/core/game
 import { createGame, MAX_CARD_CHAIN } from '../../../src/logic/core/game.js';
 import { PHASES as P } from '../../../src/logic/core/turnMachine.js';
 import { validateCards } from '../../../src/logic/systems/cards.js';
+import { declineNoAuction } from '../helpers.js';
 
 const board = createBoard({ tiles: TILES, groups: GROUPS, rules: RULES });
 const JAIL = TILES.findIndex((t) => t.type === 'jail');
@@ -44,7 +45,7 @@ const cash0 = RULES.startingCash;
 /** 掷骰；停在无主地产时放弃购买，然后结束回合 */
 function playTurn(game) {
   game.rollDice();
-  if (game.phase === P.AWAIT_DECISION) game.declineProperty();
+  if (game.phase === P.AWAIT_DECISION) declineNoAuction(game);
   return game.endTurn();
 }
 // 下标：2 命运、4 所得税 2000、5 机会、7 机会、10 监狱、30 入狱、38 奢侈品税 1000
@@ -247,7 +248,7 @@ describe('监狱', () => {
     game.rollDice();
     expect(p1.inJail).toBe(false);
     expect(p1.position).toBe(JAIL + 4);
-    if (game.phase === P.AWAIT_DECISION) game.declineProperty();
+    if (game.phase === P.AWAIT_DECISION) declineNoAuction(game);
     game.endTurn();
     expect(game.currentPlayer().id).toBe('p2');
   });
@@ -371,7 +372,7 @@ describe('5 人局', () => {
           expect(game.rollDice().ok).toBe(true);
           break;
         case P.AWAIT_DECISION:
-          if (!game.buyProperty().ok) game.declineProperty();
+          if (!game.buyProperty().ok) declineNoAuction(game);
           break;
         case P.AWAIT_PAYMENT: {
           const me = game.actingPlayerId();
@@ -410,7 +411,7 @@ describe('回合上限', () => {
     state.properties.beijing.ownerId = 'p2';
     while (game.phase !== P.GAME_OVER) {
       game.rollDice();
-      if (game.phase === P.AWAIT_DECISION) game.declineProperty();
+      if (game.phase === P.AWAIT_DECISION) declineNoAuction(game);
       game.endTurn();
     }
     expect(state.round).toBe(2);

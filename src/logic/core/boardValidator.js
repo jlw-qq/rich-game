@@ -45,6 +45,11 @@ export function validateRules(rules) {
   if (typeof rentMult !== 'number' || !(rentMult > 0 && rentMult <= 10)) {
     errors.push(`rules.rentMultiplier 必须在 (0, 10] 内，实际为 ${rentMult}`);
   }
+  const startRate = rules.auctionStartRate;
+  if (typeof startRate !== 'number' || !(startRate > 0 && startRate <= 1)) {
+    errors.push(`rules.auctionStartRate 必须在 (0, 1] 内，实际为 ${startRate}`);
+  }
+  if (!isPositiveInt(rules.auctionMinRaise)) errors.push(`rules.auctionMinRaise 必须是正整数，实际为 ${rules.auctionMinRaise}`);
   const sellRate = rules.buildingSellRate;
   if (typeof sellRate !== 'number' || !(sellRate >= 0 && sellRate <= 1)) {
     errors.push(`rules.buildingSellRate 必须在 [0, 1] 内，实际为 ${sellRate}`);

@@ -2,6 +2,7 @@
  * 逻辑层：对局协调器。把状态机与各 system 组装成对外的操作接口，供 UI 与 AI 调用。
  * 所有操作返回 { ok: true, ... } 或 { ok: false, error }，失败时状态不变。
  */
+import { auctionTurn, passAuction, placeBid, startAuction } from '../systems/auction.js';
 import { createTurnMachine, PHASES as P } from './turnMachine.js';
 import { rollDice as defaultRollDice } from '../systems/dice.js';
 import { movePlayer, sendToJail } from '../systems/movement.js';
@@ -65,6 +66,7 @@ export function createGame({ board, rules, state, bus, cards = [], rollDice = de
   function actingPlayerId() {
     if (state.phase === P.AWAIT_PAYMENT) return state.pendingDebt?.debtorId ?? null;
     if (state.phase === P.AWAIT_TRADE) return state.pendingTrade?.toId ?? null;
+    if (state.phase === P.AWAIT_AUCTION) return auctionTurn(state);
     return fsm.currentPlayer()?.id ?? null;
   }
 
@@ -209,13 +211,26 @@ export function createGame({ board, rules, state, bus, cards = [], rollDice = de
     return result;
   }
 
-  /** 放弃购买，地产保持无主 */
+  /** 放弃购买：这块地立刻拍卖（见 systems/auction.js），所有人都出不起起拍价时当场流拍 */
   function decline() {
     if (state.phase !== P.AWAIT_DECISION) return fail(`当前阶段不能放弃购买: ${state.phase}`);
     const player = fsm.currentPlayer();
-    bus.emit('purchaseDeclined', { playerId: player.id, tileId: board.getTile(player.position).id });
-    finishTile();
+    const tileId = board.getTile(player.position).id;
+    bus.emit('purchaseDeclined', { playerId: player.id, tileId });
+    fsm.transition(P.AWAIT_AUCTION);
+    if (startAuction(ctx, player.id, tileId).ended) finishTile();
     return { ok: true };
+  }
+
+  /** 包装拍卖操作：只能在拍卖阶段、由轮到的人操作；拍卖结束后结算本格 */
+  function auctionAction(fn) {
+    return (playerId, ...args) => {
+      if (state.phase !== P.AWAIT_AUCTION) return fail(`当前阶段没有拍卖: ${state.phase}`);
+      if (playerId !== actingPlayerId()) return fail('还没轮到你');
+      const r = fn(ctx, playerId, ...args);
+      if (r.ok && r.ended) finishTile();
+      return r.ok ? { ok: true } : r;
+    };
   }
 
   /** 包装地产操作：检查阶段与操作人 */
@@ -359,6 +374,8 @@ export function createGame({ board, rules, state, bus, cards = [], rollDice = de
     },
     currentPlayer: fsm.currentPlayer,
     actingPlayerId,
+    auctionBid: auctionAction(placeBid),
+    auctionPass: auctionAction(passAuction),
     netWorth: (playerId) => netWorth(ctx, playerId),
     rollDice: roll,
     buyProperty: buy,

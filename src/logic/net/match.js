@@ -8,7 +8,8 @@
  * 再让 AI 走下一步，或开始给人类玩家计时。这样动画慢的人也不会被甩在后面，计时也不会在别人还在看动画时就开始。
  * 等待超时还没回 ready 的玩家（网很慢，或连接已经断了但服务器还没发现）记为落后，之后不再等他，
  * 直到他回了最新一批的 ready；否则一个断掉的连接会让每一步都多等 readyTimeoutMs。
- * 人类玩家一步超过 turnTimeoutMs 没操作，AI 替他走这一步；掉线的玩家由 AI 代打，重新连上后接着自己操作。
+ * 人类玩家一步超过 turnTimeoutMs 没操作，AI 替他走这一步；拍卖时每人只有 auctionTimeoutMs，超时算退出。
+ * 掉线的玩家由 AI 代打，重新连上后接着自己操作。
  * 所有人类玩家都不在线时对局暂停（AI 也不走），有人回来再继续。
  */
 import { createEventBus } from '../core/eventBus.js';
@@ -25,6 +26,8 @@ import { rulesFor } from '../../data/config/modes.js';
 export const AI_DELAY_MS = 600;
 export const TURN_TIMEOUT_MS = 60_000;
 export const READY_TIMEOUT_MS = 8_000;
+/** 拍卖时每人每次的出价时间，超时算退出 */
+export const AUCTION_TIMEOUT_MS = 10_000;
 
 const board = createBoard({ tiles: TILES, groups: GROUPS, rules: RULES });
 
@@ -36,6 +39,7 @@ const board = createBoard({ tiles: TILES, groups: GROUPS, rules: RULES });
  *   aiDelayMs?: number,
  *   turnTimeoutMs?: number,
  *   readyTimeoutMs?: number,
+ *   auctionTimeoutMs?: number,
  *   offline?: string[],
  *   seq?: number,
  *   onUpdate?: () => void,
@@ -49,6 +53,7 @@ export function createMatch({
   aiDelayMs = AI_DELAY_MS,
   turnTimeoutMs = TURN_TIMEOUT_MS,
   readyTimeoutMs = READY_TIMEOUT_MS,
+  auctionTimeoutMs = AUCTION_TIMEOUT_MS,
   offline = [],
   seq: startSeq = 0,
   onUpdate = () => {},
@@ -118,6 +123,15 @@ export function createMatch({
       return;
     }
     const acting = game.actingPlayerId();
+    if (state.phase === PHASES.AWAIT_AUCTION) {
+      timer = setTimeout(() => {
+        timer = null;
+        if (disposed || game.actingPlayerId() !== acting) return;
+        performAction(game, { kind: 'pass' });
+        flush(`${nameOf(acting)} 超过 ${Math.round(auctionTimeoutMs / 1000)} 秒没出价，算退出`);
+      }, auctionTimeoutMs);
+      return;
+    }
     timer = setTimeout(() => {
       proxyOnce = acting;
       aiStep(`${nameOf(acting)} 超过 ${Math.round(turnTimeoutMs / 1000)} 秒没有操作，由 AI 代走一步`);

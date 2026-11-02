@@ -38,6 +38,7 @@ const yuan = (n) => `¥${n.toLocaleString('zh-CN')}`;
 /**
  * @typedef {{
  *   kind: 'buy' | 'rent' | 'landmark' | 'bankrupt' | 'trade' | 'gambleWin' | 'gambleLose',
+ *   （拍下地产用 buy 的样式，流拍用 gambleLose 的样式）
  *   title: string,
  *   text: string,
  *   tileId: string | null,
@@ -71,6 +72,28 @@ export function createPopupDescriber() {
           tileId: t.id,
           group: t.group,
           playerIndex: index(p.playerId),
+        };
+      }
+      case 'auctionWon': {
+        const t = tile(p.tileId);
+        return {
+          kind: 'buy',
+          title: `${player(p.playerId).name} 以 ${yuan(p.amount)} 拍下${t.name}`,
+          text: `标价 ${yuan(t.price)} · 其他玩家停在这里需付 ${yuan(calcRent(ctx, t.id))}`,
+          tileId: t.id,
+          group: t.group,
+          playerIndex: index(p.playerId),
+        };
+      }
+      case 'auctionUnsold': {
+        const t = tile(p.tileId);
+        return {
+          kind: 'gambleLose',
+          title: `${t.name}流拍`,
+          text: '没有人出价，这块地还是无主',
+          tileId: t.id,
+          group: t.group,
+          playerIndex: index(state.players[state.currentPlayerIndex]?.id),
         };
       }
       case 'paymentMade': {

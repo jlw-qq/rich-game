@@ -53,6 +53,10 @@ function cleanAction(v) {
     if (!(Number.isInteger(v.index) && v.index >= 0 && v.index < 16)) return null;
     action.index = v.index;
   }
+  if (v.amount !== undefined) {
+    if (!(Number.isInteger(v.amount) && v.amount >= 0 && v.amount <= 1e9)) return null;
+    action.amount = v.amount;
+  }
   if (v.trade !== undefined) {
     if (!isPlainObject(v.trade)) return null;
     const { toId, give, take } = v.trade;

@@ -64,6 +64,17 @@ describe('联网对局', () => {
     for (const c of [a, b]) {
       c.send('action', { action: { kind: 'roll' } });
       while (c.state.phase !== P.AWAIT_ROLL || c.state.players[c.state.currentPlayerIndex].id === c.you) {
+        if (c.state.phase === P.AWAIT_AUCTION) {
+          // 拍卖时轮到谁谁退出（可能是另一位玩家）
+          const turn = c.state.auction.active[c.state.auction.turn];
+          for (const x of [a, b]) if (x.you === turn) x.send('action', { action: { kind: 'pass' } });
+          // 轮到 AI：推进时钟让它出价或退出
+          if (c.state.phase === P.AWAIT_AUCTION && ![a.you, b.you].includes(c.state.auction.active[c.state.auction.turn])) {
+            vi.advanceTimersByTime(OPTS.readyTimeoutMs + OPTS.aiDelayMs * 2);
+            net.pump();
+          }
+          continue;
+        }
         const r = c.state.phase === P.TURN_END ? 'endTurn' : c.state.phase === P.AWAIT_DECISION ? 'decline' : c.state.phase === P.AWAIT_CHOICE ? 'choose' : c.state.phase === P.AWAIT_ROLL ? 'roll' : 'payDebt';
         c.send('action', { action: r === 'choose' ? { kind: 'choose', index: 0 } : { kind: r } });
         if (c.state.phase === P.GAME_OVER) return;

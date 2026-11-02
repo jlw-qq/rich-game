@@ -50,7 +50,7 @@ const saveCtx = { board, rules: RULES, cards: CARDS };
  *   maxRooms?: number,
  *   holdMs?: number,
  *   pauseMs?: number,
- *   matchOptions?: { aiDelayMs?: number, turnTimeoutMs?: number, readyTimeoutMs?: number },
+ *   matchOptions?: { aiDelayMs?: number, turnTimeoutMs?: number, readyTimeoutMs?: number, auctionTimeoutMs?: number },
  * }} options randomInt 返回 [0, max) 的整数；kick 断开被新页面顶替的旧连接；
  *   persist 在房间变化后调用，snapshot 为 null 表示房间已关闭；matchOptions 传给 createMatch（测试时缩短等待）
  */

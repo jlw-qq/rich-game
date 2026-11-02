@@ -289,7 +289,7 @@ describe('存档迁移到版本 5', () => {
     const loaded = importSave(serializeSave(v4), ctx);
     expect(loaded.ok).toBe(true);
     expect(loaded.state).toMatchObject({ version: STATE_VERSION, challenge: null });
-    expect(migrateState({ version: 1, players: [] })).toMatchObject({ version: 5, challenge: null });
+    expect(migrateState({ version: 1, players: [] })).toMatchObject({ version: STATE_VERSION, challenge: null });
   });
 
   it('当前版本缺少或改坏挑战码时拒绝读档', () => {

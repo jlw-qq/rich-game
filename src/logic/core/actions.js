@@ -1,6 +1,6 @@
 /**
  * 逻辑层：统一的操作描述 → 对局方法。UI 按钮和 AI 都通过这里执行操作。
- * action：{ kind, tileId?, trade?, index? }。index 为城市事件的选项下标。操作人一律取 game.actingPlayerId()，调用方不能替别人操作。
+ * action：{ kind, tileId?, trade?, index?, amount? }。index 为城市事件的选项下标，amount 为拍卖出价。操作人一律取 game.actingPlayerId()，调用方不能替别人操作。
  */
 
 export const ACTION_KINDS = [
@@ -20,6 +20,8 @@ export const ACTION_KINDS = [
   'acceptTrade',
   'rejectTrade',
   'choose',
+  'bid',
+  'pass',
 ];
 
 /**
@@ -62,6 +64,10 @@ export function performAction(game, action) {
       return game.rejectTrade();
     case 'choose':
       return game.chooseOption(action.index);
+    case 'bid':
+      return game.auctionBid(me, action.amount);
+    case 'pass':
+      return game.auctionPass(me);
     default:
       return { ok: false, error: `未知操作: ${action?.kind}` };
   }

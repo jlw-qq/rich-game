@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PHASES as P } from '../../../src/logic/core/turnMachine.js';
 import { createRng } from '../../../src/logic/utils/rng.js';
 import { validateState } from '../../../src/logic/core/stateValidator.js';
-import { AI_DELAY_MS, READY_TIMEOUT_MS, TURN_TIMEOUT_MS } from '../../../src/logic/net/match.js';
+import { AI_DELAY_MS, AUCTION_TIMEOUT_MS, READY_TIMEOUT_MS, TURN_TIMEOUT_MS } from '../../../src/logic/net/match.js';
 import { MAX_MESSAGE_BYTES } from '../../../src/logic/net/protocol.js';
 import { RULES } from '../../../src/data/config/rules.js';
 import { CARDS } from '../../../src/data/config/cards.js';
@@ -98,8 +98,8 @@ describe('迟到和不回的消息', () => {
     }
     const gaps = times.slice(1).map((t, i) => t - times[i]);
     // 阿明落后后，AI 步之间只隔 aiDelayMs，不再每步多等 8 秒。
-    // （轮到阿明自己时照常等 60 秒超时，那是正常的回合计时，不算在内）
-    const slow = gaps.filter((g) => g >= READY_TIMEOUT_MS && g < TURN_TIMEOUT_MS);
+    // （轮到阿明自己时照常等 60 秒回合计时或 10 秒拍卖计时，那是正常的计时，不算在内）
+    const slow = gaps.filter((g) => g >= READY_TIMEOUT_MS && g < AUCTION_TIMEOUT_MS);
     expect(slow.length).toBeLessThanOrEqual(2);
     expect(gaps.length).toBeGreaterThan(20);
 

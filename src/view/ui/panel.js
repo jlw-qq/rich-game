@@ -5,6 +5,7 @@
 import { el } from './dom.js';
 import { choiceDetail, money, tradeSideText } from './format.js';
 import { rentAt } from '../../logic/systems/property.js';
+import { minBid } from '../../logic/systems/auction.js';
 import { PLAYER_COLORS, GROUP_COLORS } from '../render/theme.js';
 
 /**
@@ -28,6 +29,8 @@ const ALWAYS_ENABLED = new Set(['rematch', 'newGame']);
 export function createPanel({ players, status, actions, assets, onAction, maxTradesPerTurn, goal = null }) {
   /** 联网对局里自己的玩家 id，本机对局为 null */
   let viewer = null;
+  /** 这一局的规则（拍卖最低加价要用） */
+  let currentRules = null;
   const button = (action, disabled) =>
     el('button', {
       type: 'button',
@@ -42,6 +45,34 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
       onclick: () => onAction(action),
       text: action.label,
     });
+
+  /** 自己填出价：数字框 + 按钮。超出范围时浏览器先拦一次，逻辑层再校验 */
+  function customBid(action, busy) {
+    const input = el('input', {
+      type: 'number',
+      id: 'bid-amount',
+      class: 'bid-input',
+      min: action.min,
+      max: action.max,
+      step: 10,
+      value: action.min,
+      inputmode: 'numeric',
+      'aria-label': `出价金额（${action.min}–${action.max} 元）`,
+      disabled: busy,
+    });
+    return el(
+      'form',
+      {
+        class: 'bid-form',
+        onsubmit: (e) => {
+          e.preventDefault();
+          onAction({ kind: 'bid', amount: Number(input.value) });
+        },
+      },
+      input,
+      el('button', { type: 'submit', class: 'btn', disabled: busy, dataset: { kind: 'bid' } }, action.label),
+    );
+  }
 
   function renderPlayers(state, game) {
     // 终局后不再高亮“当前玩家”（可能指向刚破产的人）
@@ -108,6 +139,14 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
         const tile = board.getTile(player.position);
         return `${tile.name} 无人拥有，售价 ${money(tile.price)}。${player.name} 现有 ${money(player.cash)}，要买吗？`;
       }
+      case 'awaitAuction': {
+        const a = state.auction;
+        const tile = board.tiles.find((t) => t.id === a.tileId);
+        const name = (id) => state.players.find((p) => p.id === id)?.name;
+        const turn = state.players.find((p) => p.id === a.active[a.turn]);
+        const high = a.high === null ? `起拍价 ${money(a.start)}，还没人出价` : `当前最高 ${name(a.highId)} ${money(a.high)}`;
+        return `拍卖 ${tile.name}（标价 ${money(tile.price)}）：${high}\n还在场：${a.active.map(name).join('、')}\n轮到 ${turn.name}（现金 ${money(turn.cash)}）出价或退出`;
+      }
       case 'awaitPayment': {
         const debt = state.pendingDebt;
         const debtor = state.players.find((p) => p.id === debt.debtorId);
@@ -159,6 +198,18 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
           { kind: 'buy', label: '买下', primary: true },
           { kind: 'decline', label: '不买' },
         ];
+      case 'awaitAuction': {
+        const a = state.auction;
+        const bidder = state.players.find((p) => p.id === a.active[a.turn]);
+        const least = minBid({ state, rules: currentRules });
+        // 第一口出起拍价；之后加 100（最低加价）或加 500
+        const options = [least, a.high === null ? least + 400 : a.high + 500].filter((v, i, arr) => v <= bidder.cash && arr.indexOf(v) === i);
+        return [
+          ...options.map((amount, i) => ({ kind: 'bid', amount, label: `出价 ${money(amount)}`, primary: i === 0 })),
+          { kind: 'bid', custom: true, min: least, max: bidder.cash, label: '出价' },
+          { kind: 'pass', label: '退出拍卖' },
+        ];
+      }
       case 'awaitPayment':
         return [
           { kind: 'payDebt', label: '付款', primary: true },
@@ -227,6 +278,7 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
    */
   function render({ state, game, board, busy, rules, me = null }) {
     viewer = me;
+    currentRules = rules;
     renderPlayers(state, game);
     renderGoal(state, game, rules);
     const acting = state.players.find((p) => p.id === game.actingPlayerId());
@@ -236,7 +288,9 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
       : acting?.isAI && state.phase !== 'gameOver'
         ? `${acting.name}（AI）正在操作…`
         : statusText(state, game, board);
-    actions.replaceChildren(...mainActions(state, game).map((a) => button(a, (busy && !ALWAYS_ENABLED.has(a.kind)) || Boolean(a.disabled))));
+    actions.replaceChildren(
+      ...mainActions(state, game).map((a) => (a.custom ? customBid(a, busy) : button(a, (busy && !ALWAYS_ENABLED.has(a.kind)) || Boolean(a.disabled)))),
+    );
     renderAssets(state, game, board, busy, rules);
   }
 
@@ -261,6 +315,8 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
 
   /** 动画播放中：只切换按钮的禁用状态，不重绘数字（避免提前显示结果） */
   function setBusy(busy) {
+    const bidInput = actions.querySelector('.bid-input');
+    if (bidInput) bidInput.disabled = busy;
     for (const b of [...actions.querySelectorAll('button'), ...assets.querySelectorAll('button')]) {
       // 本身不可选的选项（data-unavailable）动画结束后仍保持禁用
       if (!ALWAYS_ENABLED.has(b.dataset.kind)) b.disabled = busy || b.dataset.unavailable === 'true';

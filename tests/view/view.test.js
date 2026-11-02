@@ -13,6 +13,7 @@ import { PHASES as P } from '../../src/logic/core/turnMachine.js';
 import { computeLayout, gridOf, outwardOf, project, SIDE } from '../../src/view/render/layout.js';
 import { formatEvent, tradeSideText } from '../../src/view/ui/format.js';
 import { createAnimator, easeInOut, LAND_PAUSE_MS } from '../../src/view/render/animator.js';
+import { declineNoAuction } from '../logic/helpers.js';
 
 const board = createBoard({ tiles: TILES, groups: GROUPS, rules: RULES });
 
@@ -60,7 +61,7 @@ function playRecordedGame(seed) {
         game.rollDice();
         break;
       case P.AWAIT_DECISION:
-        if (!game.buyProperty().ok) game.declineProperty();
+        if (!game.buyProperty().ok) declineNoAuction(game);
         break;
       case P.AWAIT_PAYMENT: {
         const me = game.actingPlayerId();

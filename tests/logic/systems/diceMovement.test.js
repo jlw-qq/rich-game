@@ -8,6 +8,7 @@ import { createGame } from '../../../src/logic/core/game.js';
 import { PHASES as P } from '../../../src/logic/core/turnMachine.js';
 import { rollDice } from '../../../src/logic/systems/dice.js';
 import { movePlayer, sendToJail } from '../../../src/logic/systems/movement.js';
+import { declineNoAuction } from '../helpers.js';
 
 const board = createBoard({ tiles: TILES, groups: GROUPS, rules: RULES });
 const JAIL = TILES.findIndex((t) => t.type === 'jail');
@@ -38,7 +39,7 @@ const types = (events) => events.map((e) => e.type);
 /** 掷骰；停在无主地产时放弃购买，让回合走到 turnEnd（本文件只测移动） */
 function roll(game) {
   const r = game.rollDice();
-  if (game.phase === P.AWAIT_DECISION) game.declineProperty();
+  if (game.phase === P.AWAIT_DECISION) declineNoAuction(game);
   return r;
 }
 

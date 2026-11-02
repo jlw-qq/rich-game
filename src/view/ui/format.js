@@ -86,6 +86,16 @@ export function formatEvent(type, p, { state, board, cards }) {
       return `${name(p.playerId)} 买下 ${tileName(p.tileId)}，花费 ${money(p.price)}`;
     case 'purchaseDeclined':
       return `${name(p.playerId)} 没有买 ${tileName(p.tileId)}`;
+    case 'auctionStarted':
+      return `${tileName(p.tileId)} 开始拍卖，起拍价 ${money(p.start)}，${p.order.map(name).join('、')} 依次出价`;
+    case 'auctionBid':
+      return `${name(p.playerId)} 出价 ${money(p.amount)}`;
+    case 'auctionPassed':
+      return p.reason === 'cash' ? `${name(p.playerId)} 现金不够，退出拍卖` : `${name(p.playerId)} 退出拍卖`;
+    case 'auctionWon':
+      return `${name(p.playerId)} 以 ${money(p.amount)} 拍下 ${tileName(p.tileId)}`;
+    case 'auctionUnsold':
+      return `${tileName(p.tileId)} 无人出价，流拍`;
     case 'paymentMade': {
       const to = p.payeeIds.length > 0 ? p.payeeIds.map(name).join('、') : '银行';
       const why = reasonText(p.reason);

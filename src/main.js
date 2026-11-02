@@ -121,6 +121,8 @@ const log = createLog($('log'), {
 const EVENT_SOUNDS = {
   diceRolled: 'dice',
   propertyBought: 'buy',
+  auctionWon: 'buy',
+  auctionBid: 'coin',
   propertyUpgraded: 'buy',
   gambleRolled: 'dice',
   tradeAccepted: 'buy',
@@ -132,7 +134,7 @@ const EVENT_SOUNDS = {
   gameOver: 'win',
 };
 /** 需要醒目显示的日志 */
-const HIGHLIGHT_EVENTS = new Set(['turnStarted', 'playerBankrupt', 'gameOver', 'debtPending', 'tradeProposed', 'choiceOffered', 'gambleRolled']);
+const HIGHLIGHT_EVENTS = new Set(['turnStarted', 'playerBankrupt', 'gameOver', 'debtPending', 'tradeProposed', 'choiceOffered', 'gambleRolled', 'auctionStarted', 'auctionWon', 'auctionUnsold']);
 
 /** AI 每步操作之间的间隔（毫秒），按播放倍速缩短 */
 const AI_DELAY_MS = 600;

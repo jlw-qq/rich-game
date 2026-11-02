@@ -31,4 +31,8 @@ export const RULES = {
   goalNetWorth: 0,
   /** 开局随机分给每位玩家的地产块数 */
   startingProperties: 0,
+  /** 有人不买时开拍：起拍价为标价的该比例 */
+  auctionStartRate: 0.1,
+  /** 拍卖每口至少加价 */
+  auctionMinRaise: 100,
 };

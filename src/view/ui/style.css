@@ -782,6 +782,24 @@ select:focus-visible {
   display: none;
 }
 
+/* ---------- 拍卖出价 ---------- */
+
+.bid-form {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.bid-input {
+  width: 7em;
+  font: inherit;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+}
+
 /* ---------- 开局首屏：卖点 + 三个入口 ---------- */
 
 .setup-home {
