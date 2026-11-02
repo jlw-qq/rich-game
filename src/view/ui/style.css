@@ -838,6 +838,15 @@ select:focus-visible {
   margin: 0;
 }
 
+/* 首屏主视觉：微缩城市的一角，高度由脚本按宽度算 */
+.setup-hero-art {
+  display: block;
+  width: 100%;
+  margin: 6px 0 8px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--paper-shadow);
+}
+
 .setup-tagline {
   font-size: 1.35rem;
   font-weight: 800;

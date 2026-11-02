@@ -32,9 +32,11 @@ const KINDS = {
  *   onCode: (text: string) => string | null,
  *   onCreateRoom: (name: string) => Promise<string | null>,
  *   onJoinRoom: (code: string, name: string) => Promise<string | null>,
- * }} options onImport、onCode、onCreateRoom、onJoinRoom 返回错误信息，成功返回 null；daily 给出今天的日期和本机最好成绩
+ *   hero?: { element: HTMLElement, start: () => void, stop: () => void },
+ * }} options onImport、onCode、onCreateRoom、onJoinRoom 返回错误信息，成功返回 null；daily 给出今天的日期和本机最好成绩；
+ *   hero 为首屏主视觉（微缩城市动画），开局页显示时播放、隐藏时停下
  */
-export function createSetup({ root, rules, validate, onStart, onImport, daily, onDaily, onCode, onCreateRoom, onJoinRoom }) {
+export function createSetup({ root, rules, validate, onStart, onImport, daily, onDaily, onCode, onCreateRoom, onJoinRoom, hero = null }) {
   /** 当前展开的入口：local 开短局 / online 和朋友联机 / daily 今日挑战 */
   let entry = 'local';
   /** 「更多设置」是否展开（重绘时保持） */
@@ -268,6 +270,8 @@ export function createSetup({ root, rules, validate, onStart, onImport, daily, o
         'div',
         { class: 'setup-hero' },
         brandHeading('h1', 44),
+        // 重绘时复用同一块画布，动画不会从头开始
+        hero?.element,
         el('p', { class: 'setup-tagline' }, '10 分钟，和朋友争夺城市地产'),
         el('p', { class: 'muted' }, '掷骰买地、盖楼收租、和对手讨价还价，最先攒到 30,000 元的人拿下这座城市。'),
       ),
@@ -327,11 +331,13 @@ export function createSetup({ root, rules, validate, onStart, onImport, daily, o
       resume = r;
       root.hidden = false;
       render();
+      hero?.start();
       if (message) root.querySelector('.setup-errors')?.replaceChildren(el('li', {}, message));
       (root.querySelector('.setup-resume .btn-primary') ?? root.querySelector('.setup-entry[aria-pressed="true"]'))?.focus();
     },
     hide() {
       root.hidden = true;
+      hero?.stop();
     },
   };
 }

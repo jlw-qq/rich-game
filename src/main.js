@@ -39,6 +39,7 @@ import { createLog } from './view/ui/log.js';
 import { createPanel } from './view/ui/panel.js';
 import { createResults } from './view/ui/results.js';
 import { createSetup } from './view/ui/setup.js';
+import { createHero } from './view/render/hero.js';
 import { createTradeDialog } from './view/ui/trade.js';
 import { bindBoardPicker, createSelection } from './view/ui/boardPicker.js';
 import { createViewport } from './view/render/viewport.js';
@@ -551,6 +552,7 @@ const setup = createSetup({
   onCode: startCode,
   onCreateRoom: (name) => request({ t: 'create', name }),
   onJoinRoom: (code, name) => request({ t: 'join', code, name }),
+  hero: createHero({ board, rules: RULES, reducedMotion: reducedMotion.matches }),
 });
 
 // ---------- 联网房间 ----------
