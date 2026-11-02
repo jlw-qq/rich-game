@@ -327,10 +327,12 @@ function startSession(state, intro, online = null) {
   const fmtCtx = { state, board, cards: CARDS };
 
   const describe = createPopupDescriber();
+  // 本机玩家：联网时是自己的座位，本地对局是所有真人（同屏轮流玩）
+  const isMine = (id) => (online ? id === online.me : !state.players.find((p) => p.id === id)?.isAI);
   const animator = createAnimator({
     state,
     tileIds: board.tiles.map((t) => t.id),
-    describePopup: (type, payload) => describe(type, payload, { state, board, rules, cards: CARDS }),
+    describePopup: (type, payload) => describe(type, payload, { state, board, rules, cards: CARDS, isMine }),
     reducedMotion: reducedMotion.matches,
     onEvent(type, payload) {
       const text = formatEvent(type, payload, fmtCtx);

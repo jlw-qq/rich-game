@@ -68,6 +68,69 @@ describe('结果卡文案', () => {
   });
 });
 
+describe('结果卡分层：和本机玩家有关才弹大卡', () => {
+  // 本机玩家是 p1（小红），p2、p3 是 AI
+  function mine() {
+    const { state, ctx, describe } = setup();
+    return { state, describe, ctx: { ...ctx, isMine: (id) => id === 'p1' } };
+  }
+
+  it('AI 之间买地、拍下、收租、建成地标、赌局、交易：小提示条', () => {
+    const { state, ctx, describe } = mine();
+    Object.assign(state.properties.wuhan, { ownerId: 'p2' });
+    Object.assign(state.properties.beijing, { ownerId: 'p3', level: RULES.maxLevel });
+    expect(describe('propertyBought', { playerId: 'p2', tileId: 'wuhan', price: 2200 }, ctx).minor).toBe(true);
+    expect(describe('auctionWon', { playerId: 'p2', tileId: 'wuhan', amount: 1200 }, ctx).minor).toBe(true);
+    expect(describe('paymentMade', { payerId: 'p3', payeeIds: ['p2'], amount: 180, reason: { type: 'rent', tileId: 'wuhan' } }, ctx).minor).toBe(true);
+    expect(describe('propertyUpgraded', { playerId: 'p3', tileId: 'beijing', level: RULES.maxLevel, cost: 2000 }, ctx).minor).toBe(true);
+    expect(describe('gambleRolled', { playerId: 'p2', cardId: 'x', total: 9, target: 8, won: true, amount: 500 }, ctx).minor).toBe(true);
+    const trade = { fromId: 'p2', toId: 'p3', give: { cash: 500, properties: [] }, take: { cash: 0, properties: [] } };
+    expect(describe('tradeAccepted', { trade }, ctx).minor).toBe(true);
+  });
+
+  it('本机玩家买地、付租、收租、交易的任一方：大卡', () => {
+    const { state, ctx, describe } = mine();
+    state.properties.wuhan.ownerId = 'p1';
+    expect(describe('propertyBought', { playerId: 'p1', tileId: 'wuhan', price: 2200 }, ctx).minor).toBe(false);
+    expect(describe('paymentMade', { payerId: 'p1', payeeIds: ['p2'], amount: 180, reason: { type: 'rent', tileId: 'wuhan' } }, ctx).minor).toBe(false);
+    expect(describe('paymentMade', { payerId: 'p2', payeeIds: ['p1'], amount: 180, reason: { type: 'rent', tileId: 'wuhan' } }, ctx).minor).toBe(false);
+    const trade = { fromId: 'p2', toId: 'p1', give: { cash: 500, properties: [] }, take: { cash: 0, properties: [] } };
+    expect(describe('tradeAccepted', { trade }, ctx).minor).toBe(false);
+  });
+
+  it('流拍跟着发起拍卖的当前玩家走', () => {
+    const { state, ctx, describe } = mine();
+    state.currentPlayerIndex = 1;
+    expect(describe('auctionUnsold', { tileId: 'wuhan' }, ctx).minor).toBe(true);
+    state.currentPlayerIndex = 0;
+    expect(describe('auctionUnsold', { tileId: 'wuhan' }, ctx).minor).toBe(false);
+  });
+
+  it('任何人破产都是大卡', () => {
+    const { ctx, describe } = mine();
+    expect(describe('playerBankrupt', { playerId: 'p3' }, ctx).minor).toBe(false);
+  });
+
+  it('不传 isMine 时都算大卡（旧调用方式不变）', () => {
+    const { state, ctx, describe } = setup();
+    state.properties.wuhan.ownerId = 'p2';
+    expect(describe('propertyBought', { playerId: 'p2', tileId: 'wuhan', price: 2200 }, ctx).minor).toBe(false);
+  });
+
+  it('minor 的卡在普通对局里也只是小提示条，不暂停后续事件', () => {
+    const state = { players: [{ id: 'p1', position: 0 }, { id: 'p2', position: 0 }] };
+    const card = { kind: 'buy', title: 'x', text: 'y', tileId: 'wuhan', group: 'red', playerIndex: 1, minor: true };
+    const events = [];
+    const a = createAnimator({ state, describePopup: (type) => (type === 'propertyBought' ? card : null), onEvent: (type) => events.push(type) });
+    a.handle({ playerId: 'p2', tileId: 'wuhan', price: 2200 }, 'propertyBought');
+    a.handle({ playerId: 'p2', amount: 100 }, 'cashGained');
+    a.tick(0);
+    expect(events).toEqual(['propertyBought', 'cashGained']);
+    expect(a.popup).toMatchObject({ toast: true });
+    expect(a.dismissPopup()).toBe(false);
+  });
+});
+
 describe('结果卡动画曲线', () => {
   it('开头从 0.6 回弹放大到 1，结尾淡出；减少动态效果时不缩放', () => {
     expect(popupMotion(0).scale).toBeCloseTo(0.6);

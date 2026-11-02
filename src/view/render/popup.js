@@ -14,7 +14,7 @@ import { drawLogo } from '../brand.js';
  * 关键结果要留出阅读时间；玩家可以点击或按键提前关掉。
  */
 export const POPUP_MS = 1200;
-/** 观战：不打断流程的小提示条，同样不随倍速缩短 */
+/** 观战或与本机玩家无关的事件：不打断流程的小提示条，同样不随倍速缩短 */
 export const TOAST_MS = 1500;
 
 /** 地标的中文名，用于“建成某某”的文案 */
@@ -36,6 +36,23 @@ export const LANDMARK_NAMES = {
 const yuan = (n) => `¥${n.toLocaleString('zh-CN')}`;
 
 /**
+ * 事件涉及哪些玩家：其中有本机玩家时才弹会暂停对局的大卡，否则只用小提示条带过。
+ * @returns {(string | undefined)[]}
+ */
+function involvedIds(type, p, state) {
+  switch (type) {
+    case 'paymentMade':
+      return [p.payerId, ...p.payeeIds];
+    case 'tradeAccepted':
+      return [p.trade.fromId, p.trade.toId];
+    case 'auctionUnsold':
+      return [state.players[state.currentPlayerIndex]?.id];
+    default:
+      return [p.playerId];
+  }
+}
+
+/**
  * @typedef {{
  *   kind: 'buy' | 'rent' | 'landmark' | 'bankrupt' | 'trade' | 'gambleWin' | 'gambleLose',
  *   （拍下地产用 buy 的样式，流拍用 gambleLose 的样式）
@@ -44,18 +61,29 @@ const yuan = (n) => `¥${n.toLocaleString('zh-CN')}`;
  *   tileId: string | null,
  *   group: string | null,
  *   playerIndex: number,
+ *   minor: boolean,
  * }} Popup
  * playerIndex 为这件事的主角（买地的人、收租的人、破产的人），用来给卡片配色。
+ * minor 为 true 表示事件和本机玩家无关（如 AI 之间买地、收租），只用小提示条带过；破产是整局大事，永远不是 minor。
  */
 
 /**
  * 记住最近一次破产清算的继承人：assetsLiquidated 在 playerBankrupt 之前发出。
- * @returns {(type: string, payload: object, ctx: { state: object, board: object, rules: object }) => Popup | null}
+ * ctx.isMine(playerId) 判断是否为本机玩家；不传时所有玩家都算（每张卡都是大卡）。
+ * @returns {(type: string, payload: object, ctx: { state: object, board: object, rules: object, isMine?: (id: string) => boolean }) => Popup | null}
  */
 export function createPopupDescriber() {
   let lastHeir = null;
 
   return function describePopup(type, p, ctx) {
+    const card = describeCard(type, p, ctx);
+    if (!card) return null;
+    const isMine = ctx.isMine ?? (() => true);
+    card.minor = card.kind !== 'bankrupt' && !involvedIds(type, p, ctx.state).some((id) => id && isMine(id));
+    return card;
+  };
+
+  function describeCard(type, p, ctx) {
     const { state, board, rules } = ctx;
     const player = (id) => state.players.find((x) => x.id === id);
     const index = (id) => state.players.findIndex((x) => x.id === id);
@@ -162,7 +190,7 @@ export function createPopupDescriber() {
       default:
         return null;
     }
-  };
+  }
 }
 
 /**

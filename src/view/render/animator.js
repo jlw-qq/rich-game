@@ -242,10 +242,11 @@ export function createAnimator({ state, tileIds = [], describePopup = () => null
     // 在落点格付租金或交税：金额出现后光边交棒，顺序是“停在这里 → 付了多少”
     if (type === 'paymentMade' && p.reason?.tileId) handOff(p.reason.tileId);
 
-    // 关键事件弹结果卡。时长不随倍速和“减少动态效果”变化（后者只是去掉弹出动画），保证读得完
+    // 关键事件弹结果卡。时长不随倍速和“减少动态效果”变化（后者只是去掉弹出动画），保证读得完。
+    // 观战、或事件和本机玩家无关时只用小提示条，不打断对局
     const card = describePopup(type, p);
     if (card) {
-      if (calm) {
+      if (calm || card.minor) {
         popup = { data: card, born: lastNow, ms: TOAST_MS, toast: true };
       } else {
         popup = { data: card, born: lastNow, ms: POPUP_MS, toast: false };
