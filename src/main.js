@@ -532,6 +532,7 @@ const panel = createPanel({
   actions: $('actions'),
   assets: $('assets'),
   goal: $('goal'),
+  hints: $('hints'),
   onAction: dispatch,
   maxTradesPerTurn: RULES.maxTradesPerTurn,
 });

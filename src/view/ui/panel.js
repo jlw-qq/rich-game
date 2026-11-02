@@ -4,13 +4,46 @@
  */
 import { el } from './dom.js';
 import { choiceDetail, money, tradeSideText } from './format.js';
-import { rentAt } from '../../logic/systems/property.js';
+import { calcRent } from '../../logic/systems/property.js';
 import { minBid } from '../../logic/systems/auction.js';
+import { turnHints } from '../../logic/systems/hints.js';
 import { PLAYER_COLORS, GROUP_COLORS } from '../render/theme.js';
 
 /**
  * @typedef {{ kind: string, label: string, primary?: boolean, danger?: boolean, tileId?: string }} Action
  */
+
+/**
+ * 把 turnHints 的结果写成提示文字。掷骰前才能升级，所以升级提示只在 awaitRoll 出现。
+ * @returns {string[]}
+ */
+export function hintLines(state, board, rules, player) {
+  const h = turnHints({ state, board, rules }, player.id);
+  const tileName = (id) => board.tiles.find((t) => t.id === id).name;
+  const name = (id) => state.players.find((p) => p.id === id)?.name;
+  const lines = [];
+  if (h.upgrades && state.phase === 'awaitRoll') {
+    const { count, best } = h.upgrades;
+    const head = count > 1 ? `可升级 ${count} 块地，最划算：` : '可升级：';
+    lines.push(`${head}${tileName(best.tileId)} 花 ${money(best.cost)}，租金 ${money(best.from)} → ${money(best.to)}`);
+  }
+  const g = h.groups[0];
+  if (g) {
+    const reward = `凑齐整组，空地租金 ×${rules.groupRentMultiplier}，还能盖楼`;
+    if (g.here) lines.push(`买下 ${tileName(g.tileId)} 就${reward}`);
+    else if (g.ownerId === null) lines.push(`还差 ${tileName(g.tileId)}（无主）就${reward}`);
+    else lines.push(`还差 ${tileName(g.tileId)} 就凑齐整组，它在 ${name(g.ownerId)} 手里，可以试试交易`);
+  }
+  if (h.goal) {
+    // 目标金额已显示在顶部的目标栏，这里只写差距
+    lines.push(
+      h.goal.leaderId === player.id
+        ? `你领先，离目标还差 ${money(h.goal.myGap)}`
+        : `${name(h.goal.leaderId)} 领先，离目标还差 ${money(h.goal.leaderGap)}；你还差 ${money(h.goal.myGap)}`,
+    );
+  }
+  return lines;
+}
 
 /** 终局按钮不受动画和 AI 回合影响 */
 const ALWAYS_ENABLED = new Set(['rematch', 'newGame']);
@@ -24,9 +57,10 @@ const ALWAYS_ENABLED = new Set(['rematch', 'newGame']);
  *   onAction: (action: Action) => void,
  *   maxTradesPerTurn: number,
  *   goal?: HTMLElement,
- * }} roots goal 为显示剩余轮数和目标资产的元素
+ *   hints?: HTMLElement,
+ * }} roots goal 为显示剩余轮数和目标资产的元素；hints 为操作区里“本回合机会”的列表
  */
-export function createPanel({ players, status, actions, assets, onAction, maxTradesPerTurn, goal = null }) {
+export function createPanel({ players, status, actions, assets, onAction, maxTradesPerTurn, goal = null, hints = null }) {
   /** 联网对局里自己的玩家 id，本机对局为 null */
   let viewer = null;
   /** 这一局的规则（拍卖最低加价要用） */
@@ -262,7 +296,7 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
               'span',
               { class: 'asset-name' },
               t.name,
-              el('span', { class: 'muted' }, prop.mortgaged ? ' 已抵押' : ` ${prop.level} 级 · 租 ${rules ? rentAt(t, prop.level, rules) : t.rent[prop.level]}`),
+              el('span', { class: 'muted' }, prop.mortgaged ? ' 已抵押' : ` ${prop.level} 级 · 租 ${rules ? calcRent({ state, board, rules }, t.id) : t.rent[prop.level]}`),
             ),
             el('span', { class: 'asset-ops' }, ops.map((a) => button(a, busy))),
           );
@@ -292,6 +326,18 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
       ...mainActions(state, game).map((a) => (a.custom ? customBid(a, busy) : button(a, (busy && !ALWAYS_ENABLED.has(a.kind)) || Boolean(a.disabled)))),
     );
     renderAssets(state, game, board, busy, rules);
+    renderHints(state, board, rules, acting && !waiting && !acting.isAI ? acting : null);
+  }
+
+  /**
+   * 本回合机会：轮到本机真人、掷骰前或决定买地时，把能做的经营决策写成最多 3 行。
+   * @param {object | null} player 正在操作的本机玩家；不是本机玩家时隐藏
+   */
+  function renderHints(state, board, rules, player) {
+    if (!hints) return;
+    const lines = player && rules && ['awaitRoll', 'awaitDecision'].includes(state.phase) ? hintLines(state, board, rules, player) : [];
+    hints.hidden = lines.length === 0;
+    hints.replaceChildren(...lines.map((text) => el('li', {}, text)));
   }
 
   /** 终局条件一直显示在侧栏：剩余轮数，以及（短局）目标资产和目前的领先者 */
