@@ -219,6 +219,15 @@ export function drawPopup(ctx, { width, height }, popup, { t, toast, reducedMoti
     return;
   }
 
+  // 破产是整局的大事：先把整个棋盘压暗
+  if (popup.kind === 'bankrupt') {
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.5;
+    ctx.fillStyle = '#1a0f08';
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
+  }
+
   const w = Math.min(width * 0.62, 380);
   const art = popup.tileId ? Math.min(110, height * 0.28) : 0;
   const h = art + 112;

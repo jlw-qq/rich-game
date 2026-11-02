@@ -67,6 +67,21 @@ export function ownsFullGroup({ state, board }, playerId, group) {
 }
 
 /**
+ * 玩家刚拿到 tileIds 这几块地后，凑齐了哪些颜色组就各发一个 groupCompleted（表现层用来让整组发光）。
+ * 调用方保证这些地刚刚换到他名下，所以凑齐的组都是新凑齐的。
+ * @param {Context & { bus: { emit: Function } }} ctx
+ * @param {string} playerId
+ * @param {string[]} tileIds
+ */
+export function announceGroups(ctx, playerId, tileIds) {
+  const { board, bus } = ctx;
+  const groups = new Set(tileIds.map((id) => board.tiles.find((t) => t.id === id)?.group).filter(Boolean));
+  for (const group of groups) {
+    if (ownsFullGroup(ctx, playerId, group)) bus.emit('groupCompleted', { playerId, group, tileIds: board.getGroupTiles(group).map((t) => t.id) });
+  }
+}
+
+/**
  * 停在该地产上应付的租金。无主、已抵押、地主已破产时为 0。
  * 空地且地主拥有整个颜色组时乘以 groupRentMultiplier。
  * @param {Context} ctx
@@ -133,6 +148,7 @@ export function buyProperty(ctx, playerId, tileId) {
   player.cash -= tile.price;
   prop.ownerId = playerId;
   ctx.bus.emit('propertyBought', { playerId, tileId: tile.id, price: tile.price });
+  announceGroups(ctx, playerId, [tile.id]);
   return ok();
 }
 

@@ -5,7 +5,7 @@
  */
 import { gridOf, outwardOf, SIDE } from './layout.js';
 import { GROUP_COLORS, PLAYER_COLORS, shade } from './theme.js';
-import { easeOutBack } from './easing.js';
+import { easeOutBack, flash } from './easing.js';
 
 /**
  * 中央地块离外圈格子的距离（网格单位）。再大会让角落附近相邻两边的地块重叠（见 city.test.js）。
@@ -481,6 +481,18 @@ export function createCityPainter(ctx, layout, project) {
       } else {
         box(x, y, LOT_HALF, LOT_HALF, th * 0.05, shade(GROUP_COLORS[lot.group], 1.1));
       }
+      if (fx?.kind === 'group') {
+        ctx.save();
+        ctx.globalAlpha = flash(fx.t);
+        rectPath({ gx0: lot.gx - LOT_HALF - 0.08, gy0: lot.gy - LOT_HALF - 0.08, gx1: lot.gx + LOT_HALF + 0.08, gy1: lot.gy + LOT_HALF + 0.08 });
+        // 金色光边：组色地块本身是组色，用组色描边看不出来
+        ctx.shadowColor = '#ffd84a';
+        ctx.shadowBlur = th * 0.6;
+        ctx.strokeStyle = '#ffd84a';
+        ctx.lineWidth = Math.max(3, th * 0.12);
+        ctx.stroke();
+        ctx.restore();
+      }
       if (link) {
         ctx.save();
         ctx.globalAlpha = link.alpha;
@@ -518,8 +530,46 @@ export function createCityPainter(ctx, layout, project) {
         LANDMARK_PAINTERS[spec.shape](x, baseY, fx?.kind === 'upgrade' ? g : 1, owner);
       }
       ctx.restore();
+      if (fx?.kind === 'upgrade') upgradeDust(x, baseY, fx.t, spec.kind === 'landmark' ? 1.4 : 1);
     }
     ctx.restore();
+  }
+
+  /** 升级：地基扬起一圈尘土，楼长到顶时头上冒几颗星 */
+  function upgradeDust(x, y, t, size) {
+    ctx.save();
+    const ring = th * 0.35 * size * (0.4 + t);
+    ctx.globalAlpha = Math.max(0, 0.85 * (1 - t));
+    ctx.beginPath();
+    ctx.ellipse(x, y, ring, ring / 2, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = '#fff3d6';
+    ctx.lineWidth = Math.max(3, th * 0.1);
+    ctx.stroke();
+    if (t > 0.45) {
+      const s = (t - 0.45) / 0.55;
+      ctx.globalAlpha = Math.sin(Math.PI * s);
+      ctx.fillStyle = '#ffd84a';
+      ctx.strokeStyle = '#a86f00';
+      ctx.lineWidth = 1;
+      for (let k = 0; k < 3; k++) {
+        const a = -Math.PI / 2 + (k - 1) * 0.7;
+        const d = th * (0.5 + 0.35 * s) * size;
+        star(x + Math.cos(a) * d * 0.6, y - th * 0.9 * size + Math.sin(a) * d * 0.4 - s * th * 0.2, th * 0.16);
+      }
+    }
+    ctx.restore();
+  }
+
+  function star(cx, cy, r) {
+    ctx.beginPath();
+    for (let k = 0; k < 8; k++) {
+      const rr = k % 2 ? r * 0.4 : r;
+      const a = (k * Math.PI) / 4 - Math.PI / 2;
+      ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
   }
 
   /** 在 (x, y) 处单独画一个地标，用于结果卡插画 */

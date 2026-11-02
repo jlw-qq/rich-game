@@ -4,7 +4,7 @@
 import { computeLayout, gridOf, outwardOf, project, tileAt, TILE_SCALE } from './layout.js';
 import { BOARD_COLORS, GROUP_COLORS, GROUP_HEADERS, ICON_COLORS, PLAYER_COLORS, STYLE, TILE_COLORS, shade } from './theme.js';
 import { drawIcon } from './icons.js';
-import { easeOutBack, flash } from './easing.js';
+import { easeInOut, easeOutBack, flash } from './easing.js';
 import { cityGround, cityLots, createCityPainter, PLAZA_MAX, PLAZA_MIN } from './city.js';
 import { drawPopup } from './popup.js';
 import { drawLogo, GAME_NAME } from '../brand.js';
@@ -38,6 +38,9 @@ const TOKEN_SLOTS = [
   [0, 0.36],
   [0, 0],
 ];
+/** 没有动作时的棋子姿势 */
+const NO_POSE = Object.freeze({ dz: 0, tilt: 0, sx: 1, sy: 1, alpha: 1 });
+
 const PIPS = {
   1: [[0, 0]],
   2: [[-1, -1], [1, 1]],
@@ -427,6 +430,30 @@ export function createBoardRenderer(canvas) {
         ctx.fill();
       }
     }
+    // 凑齐颜色组：整组顶面染上组色、描一圈金色光边，闪两下（金色在浅色格子和深色组色上都看得清）
+    if (fx?.kind === 'group') {
+      ctx.save();
+      ctx.globalAlpha = flash(fx.t);
+      topPath(c);
+      ctx.fillStyle = GROUP_COLORS[tile.group];
+      ctx.globalAlpha *= 0.45;
+      ctx.fill();
+      ctx.globalAlpha = flash(fx.t);
+      ctx.shadowColor = '#ffd84a';
+      ctx.shadowBlur = th * 0.6;
+      ctx.strokeStyle = '#ffd84a';
+      ctx.lineWidth = Math.max(STYLE.emphasisLine, th * 0.12);
+      ctx.lineJoin = 'round';
+      topPath(c);
+      ctx.stroke();
+      ctx.restore();
+    }
+    // 破产被收走的地产：暗下去再亮回来
+    if (fx?.kind === 'bankrupt') {
+      topPath(c);
+      ctx.fillStyle = `rgba(40, 30, 25, ${0.6 * Math.sin(Math.PI * fx.t)})`;
+      ctx.fill();
+    }
 
     // 统一描边：顶面轮廓 + 侧面外轮廓
     ctx.strokeStyle = BOARD_COLORS.outline;
@@ -532,11 +559,13 @@ export function createBoardRenderer(canvas) {
    * 立体小兵棋子：底座 + 收腰的身体 + 圆头，座位号写在头上。
    * (x, y) 为落在格子上的点，z 为跳起高度（格高为单位），r 为基准半径。
    */
-  function drawPawn(x, y, z, r, color, seat, current) {
+  function drawPawn(x, y, z, r, color, seat, current, pose = NO_POSE) {
     const { th } = layout;
     const lift = z * th;
     const outline = '#2b1d10';
 
+    ctx.save();
+    ctx.globalAlpha *= pose.alpha;
     // 地面上的影子，不随跳起移动，跳得越高越小
     const shrink = 1 / (1 + z * 2);
     ctx.beginPath();
@@ -545,6 +574,11 @@ export function createBoardRenderer(canvas) {
     ctx.fill();
 
     const by = y - lift;
+    // 以底座为轴倾斜、压扁或拉伸
+    ctx.translate(x, by);
+    ctx.rotate(pose.tilt);
+    ctx.scale(pose.sx, pose.sy);
+    ctx.translate(-x, -by);
     const dark = shade(color, 0.72);
     ctx.lineWidth = 1.2;
     ctx.strokeStyle = outline;
@@ -601,14 +635,43 @@ export function createBoardRenderer(canvas) {
     ctx.fill();
     ctx.stroke();
     fitText(String(seat), x, hy + hr * 0.04, hr * 1.25, hr * 1.5, '#1b1b1b', 'bold');
+    ctx.restore();
   }
 
-  function drawTokens(state, tokens, currentPlayerId, board) {
+  /** 收租的金币：从付钱的人头顶飞到收钱的人头顶，一枚接一枚，路线是一道弧 */
+  function drawCoins(coins, spots) {
+    const { th } = layout;
+    for (const c of coins) {
+      const a = spots.get(c.from);
+      const b = spots.get(c.to);
+      if (!a || !b) continue;
+      for (let k = 0; k < c.count; k++) {
+        const u = Math.min(1, Math.max(0, (c.t - k * 0.07) / (1 - (c.count - 1) * 0.07)));
+        if (u <= 0 || u >= 1) continue;
+        const e = easeInOut(u);
+        const x = a.x + (b.x - a.x) * e;
+        const y = a.y + (b.y - a.y) * e - Math.sin(Math.PI * u) * th * 1.2 - th * 0.55;
+        const rx = th * 0.13;
+        const ry = rx * (0.35 + 0.65 * Math.abs(Math.cos(u * 12 + k)));
+        ctx.beginPath();
+        ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffc928';
+        ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = '#a86f00';
+        ctx.stroke();
+      }
+    }
+  }
+
+  /** @returns {Map<string, { x: number, y: number }>} 每枚棋子落在棋盘上的位置（金币的起点和终点） */
+  function drawTokens(state, tokens, currentPlayerId, board, poses) {
     const { tw, th } = layout;
     const r = th * 0.17;
     const items = state.players
       .map((p, i) => ({ p, i, tok: tokens.get(p.id) }))
-      .filter(({ p, tok }) => !p.bankrupt && tok)
+      // 破产的棋子播完倒下的动作才消失
+      .filter(({ p, tok }) => tok && (!p.bankrupt || poses.get(p.id)?.kind === 'fall'))
       .map(({ p, i, tok }) => {
         const base = project(layout, tok.gx, tok.gy);
         const [sx, sy] = TOKEN_SLOTS[i % TOKEN_SLOTS.length];
@@ -617,14 +680,19 @@ export function createBoardRenderer(canvas) {
           const g = gridOf(t.index);
           return g.gx === tok.gx && g.gy === tok.gy;
         }) : null;
-        return { p, i, z: tok.z, index: index >= 0 ? index : null, x: base.x + sx * tw, y: base.y + sy * th };
+        return { p, i, z: tok.z, tilt: tok.tilt ?? 0, index: index >= 0 ? index : null, x: base.x + sx * tw, y: base.y + sy * th };
       })
       .sort((a, b) => a.y - b.y);
 
-    for (const { p, i, x, y, z } of items) {
-      drawPawn(x, y, z, r, PLAYER_COLORS[i], i + 1, p.id === currentPlayerId);
+    const spots = new Map();
+    for (const { p, i, x, y, z, tilt } of items) {
+      const pose = poses.get(p.id);
+      const shape = pose ? { ...pose, tilt: pose.tilt + tilt } : tilt ? { ...NO_POSE, tilt } : NO_POSE;
+      drawPawn(x, y, z + (pose?.dz ?? 0), r, PLAYER_COLORS[i], i + 1, p.id === currentPlayerId, shape);
+      spots.set(p.id, { x, y });
     }
     drawStackLabels(board, items);
+    return spots;
   }
 
   function drawFloater({ text, color, gx, gy, rise, alpha, scale = 1 }) {
@@ -656,7 +724,9 @@ export function createBoardRenderer(canvas) {
    *   popup?: { data: object, t: number, toast: boolean } | null,
    *   reducedMotion?: boolean,
    *   view?: { scale: number, ox: number, oy: number },
-   * }} scene focus 为落点高亮；effects 为格子特效；viewing 为玩家正在查看的格子；
+   *   poses?: Map<string, { kind: string, dz: number, tilt: number, sx: number, sy: number, alpha: number }>,
+   *   coins?: { from: string, to: string, count: number, t: number }[],
+   * }} scene poses 为棋子动作，coins 为飞行中的金币； focus 为落点高亮；effects 为格子特效；viewing 为玩家正在查看的格子；
    *   maxLevel 为地产最高等级（满级时中央显示地标）
    */
   function draw({
@@ -673,6 +743,8 @@ export function createBoardRenderer(canvas) {
     view = { scale: 1, ox: 0, oy: 0 },
     popup = null,
     reducedMotion = false,
+    poses = new Map(),
+    coins = [],
   }) {
     effects = tileEffects;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -726,7 +798,7 @@ export function createBoardRenderer(canvas) {
       ctx.restore();
     }
     drawCenterLabels(state, dice);
-    if (state && tokens) drawTokens(state, tokens, currentPlayerId, board);
+    if (state && tokens) drawCoins(coins, drawTokens(state, tokens, currentPlayerId, board, poses));
     for (const f of floaters) drawFloater(f);
 
     // 结果卡在屏幕坐标里画，不随棋盘缩放，字号固定

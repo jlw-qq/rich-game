@@ -12,7 +12,7 @@ import { createGame } from '../../src/logic/core/game.js';
 import { PHASES as P } from '../../src/logic/core/turnMachine.js';
 import { computeLayout, gridOf, outwardOf, project, SIDE } from '../../src/view/render/layout.js';
 import { formatEvent, tradeSideText } from '../../src/view/ui/format.js';
-import { createAnimator, easeInOut, LAND_PAUSE_MS } from '../../src/view/render/animator.js';
+import { WALK_STYLES, createAnimator, easeInOut, LAND_PAUSE_MS } from '../../src/view/render/animator.js';
 import { declineNoAuction } from '../logic/helpers.js';
 
 const board = createBoard({ tiles: TILES, groups: GROUPS, rules: RULES });
@@ -132,7 +132,7 @@ describe('animator', () => {
     animator.tick(10000); // 骰子播完，开始移动
     animator.tick(20000); // 移动播完
     expect(onEvent.mock.calls.map((c) => c[0])).toEqual(['diceRolled', 'playerMoved', 'cashGained']);
-    expect(animator.tokens.get('p1')).toEqual({ ...gridOf(5), z: 0 });
+    expect(animator.tokens.get('p1')).toEqual({ ...gridOf(5), z: 0, tilt: 0 });
     expect(animator.dice.values).toEqual([2, 3]);
     expect(animator.busy).toBe(false);
     expect(onIdle).toHaveBeenCalledTimes(1);
@@ -145,10 +145,10 @@ describe('animator', () => {
     animator.handle({ playerId: 'p1', from: 0, to: 3, steps: 3, path: [1, 2, 3] }, 'playerMoved');
     animator.handle({ playerId: 'p1', from: 3, to: 10 }, 'sentToJail');
     animator.tick(0);
-    expect(animator.tokens.get('p1')).toEqual({ ...gridOf(3), z: 0 });
+    expect(animator.tokens.get('p1')).toEqual({ ...gridOf(3), z: 0, tilt: 0 });
     expect(animator.busy).toBe(true); // 停顿中
     animator.tick(LAND_PAUSE_MS);
-    expect(animator.tokens.get('p1')).toEqual({ ...gridOf(10), z: 0 });
+    expect(animator.tokens.get('p1')).toEqual({ ...gridOf(10), z: 0, tilt: 0 });
     animator.tick(LAND_PAUSE_MS * 2);
     expect(animator.busy).toBe(false);
   });
@@ -236,7 +236,7 @@ describe('移动节奏', () => {
     expect(progress()).toBeLessThan(0.25);
     a.tick(STEP / 2);
     expect(progress()).toBeCloseTo(0.5);
-    expect(a.tokens.get('p1').z).toBeCloseTo(0.3);
+    expect(a.tokens.get('p1').z).toBeCloseTo(WALK_STYLES[0].hop);
   });
 
   it('落地后停顿，停顿结束前不播放后续事件', () => {

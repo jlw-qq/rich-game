@@ -2,6 +2,10 @@
  * 表现层：动画排队器。逻辑层的事件是同步发出的，这里按顺序逐个播放：
  * 每个事件开始播放时调用 onEvent（写日志、放音效），播完再处理下一个。
  * 只维护“显示用”的棋子位置、骰子、飘字、落点和格子特效，不修改游戏状态。
+ *
+ * 棋子的性格：每个座位走路的样子不同（蹦得高、摇摆、滑行……），停下时压扁一下；
+ * 买到地、凑齐颜色组、赌赢时欢呼，付钱、赌输时垂头，破产时倒下。这些动作叫 pose，
+ * 不阻塞事件队列，和后面的事件同时播放。收租时金币从付钱的人飞向收钱的人。
  */
 import { gridOf } from './layout.js';
 import { diceBounce, easeInOut, popScale } from './easing.js';
@@ -28,10 +32,28 @@ const GLOW_HANDOFF_MS = 150;
 export const DICE_BOUNCE_MS = 300;
 
 /**
+ * 每个座位的走路样子（按座位轮流取）：hop 为每步跳起的高度（格高为单位），sway 为左右摇摆的角度（弧度）。
+ */
+export const WALK_STYLES = [
+  { hop: 0.32, sway: 0 },
+  { hop: 0.14, sway: 0.16 },
+  { hop: 0.5, sway: 0.05 },
+  { hop: 0.22, sway: 0.1 },
+  { hop: 0.08, sway: 0.22 },
+];
+/** 棋子动作的时长（毫秒），按播放倍速缩短 */
+export const POSE_MS = { land: 260, cheer: 760, sad: 900, fall: 1100 };
+/** 金币从付钱的人飞到收钱的人的时长 */
+export const COIN_MS = 750;
+
+/**
  * 地产事件 → 格子特效。返回 [tileId, kind, level?] 列表。
  * 特效只用于表现：买地闪色条、升级弹出建筑、卖建筑缩小、抵押变暗、赎回变亮。
  */
 const TILE_EFFECTS = {
+  // 凑齐颜色组：整组一起发光；破产：被收走的地产闪一下暗色
+  groupCompleted: (p) => p.tileIds.map((id) => [id, 'group']),
+  assetsLiquidated: (p) => p.properties.map((id) => [id, 'bankrupt']),
   propertyBought: (p) => [[p.tileId, 'buy']],
   auctionWon: (p) => [[p.tileId, 'buy']],
   propertyUpgraded: (p) => [[p.tileId, 'upgrade', p.level]],
@@ -43,9 +65,37 @@ const TILE_EFFECTS = {
 };
 
 /** 各特效时长（毫秒），按播放倍速缩短 */
-export const EFFECT_MS = { buy: 500, upgrade: 350, sell: 350, mortgage: 400, redeem: 400 };
+export const EFFECT_MS = { buy: 500, upgrade: 700, sell: 350, mortgage: 400, redeem: 400, group: 1400, bankrupt: 900 };
 
 const lerp = (a, b, t) => a + (b - a) * t;
+
+/**
+ * 动作在进度 a（0–1）时的样子。
+ * @returns {{ dz: number, tilt: number, sx: number, sy: number, alpha: number }}
+ */
+export function poseShape(kind, a) {
+  // 进入和退出各占 20%，中间保持
+  const hold = Math.min(1, a / 0.2, (1 - a) / 0.2);
+  switch (kind) {
+    case 'land': {
+      const s = Math.sin(Math.PI * a);
+      return { dz: 0, tilt: 0, sx: 1 + 0.22 * s, sy: 1 - 0.26 * s, alpha: 1 };
+    }
+    case 'cheer':
+      // 连跳两下，空中左右晃
+      return { dz: Math.abs(Math.sin(2 * Math.PI * a)) * 0.38 * (1 - a * 0.3), tilt: Math.sin(4 * Math.PI * a) * 0.18, sx: 1, sy: 1 + 0.08 * Math.abs(Math.sin(2 * Math.PI * a)), alpha: 1 };
+    case 'sad':
+      // 矮下去、往前垂
+      return { dz: 0, tilt: 0.24 * hold, sx: 1 + 0.06 * hold, sy: 1 - 0.18 * hold, alpha: 1 };
+    case 'fall': {
+      // 前半段倒下，后半段淡出
+      const tip = Math.min(1, a / 0.45);
+      return { dz: 0, tilt: (Math.PI / 2) * (1 - (1 - tip) ** 3), sx: 1, sy: 1, alpha: a < 0.55 ? 1 : 1 - (a - 0.55) / 0.45 };
+    }
+    default:
+      return { dz: 0, tilt: 0, sx: 1, sy: 1, alpha: 1 };
+  }
+}
 const randomFace = () => 1 + Math.floor(Math.random() * 6);
 
 /** 事件 → 涉及的金额变化，用于飘字 */
@@ -81,7 +131,13 @@ const CASH_DELTAS = {
  *   describePopup 把关键事件翻译成结果卡内容，返回 null 表示该事件不弹卡
  */
 export function createAnimator({ state, tileIds = [], describePopup = () => null, reducedMotion = false, onEvent = () => {}, onChange = () => {}, onIdle = () => {} }) {
-  const tokens = new Map(state.players.map((p) => [p.id, { ...gridOf(p.position), z: 0 }]));
+  const tokens = new Map(state.players.map((p) => [p.id, { ...gridOf(p.position), z: 0, tilt: 0 }]));
+  /** 座位号决定走路样子 */
+  const seats = new Map(state.players.map((p, i) => [p.id, i]));
+  /** 棋子动作：playerId → { kind, born, ms } */
+  const poses = new Map();
+  /** 飞行中的金币：{ from, to, count, born, ms } */
+  let coins = [];
   /** bounce：落定弹跳的上抬和压扁，静止时为 { lift: 0, scaleX: 1, scaleY: 1 } */
   const dice = { values: [1, 1], rolling: false, bounce: diceBounce(1) };
   /** 骰子落定的时刻，弹跳结束后为 null */
@@ -137,6 +193,35 @@ export function createAnimator({ state, tileIds = [], describePopup = () => null
     if (focus && focus.cutAt === undefined && tileIds[focus.index] === tileId) focus.cutAt = lastNow;
   }
 
+  /** 给棋子安排一个动作；减少动态效果时不做 */
+  function addPose(playerId, kind) {
+    if (reducedMotion || !tokens.has(playerId)) return;
+    poses.set(playerId, { kind, born: lastNow, ms: POSE_MS[kind] / speed });
+  }
+
+  /** 事件 → 棋子动作和金币 */
+  function addReactions(type, p) {
+    switch (type) {
+      case 'propertyBought':
+      case 'auctionWon':
+      case 'groupCompleted':
+        return addPose(p.playerId, 'cheer');
+      case 'gambleRolled':
+        return addPose(p.playerId, p.won ? 'cheer' : 'sad');
+      case 'playerBankrupt':
+        // 破产不受“减少动态效果”以外的条件限制：倒下后才从棋盘上消失
+        return addPose(p.playerId, 'fall');
+      case 'paymentMade':
+        if (p.amount <= 0) return;
+        addPose(p.payerId, 'sad');
+        if (!reducedMotion && p.reason?.type === 'rent' && p.payeeIds.length > 0 && tokens.has(p.payeeIds[0])) {
+          coins.push({ from: p.payerId, to: p.payeeIds[0], count: Math.min(6, 2 + Math.floor(p.amount / 400)), born: lastNow, ms: COIN_MS / speed });
+        }
+        return;
+      default:
+    }
+  }
+
   function addFloater(playerId, amount) {
     const tok = tokens.get(playerId);
     if (!tok || amount === 0) return;
@@ -153,6 +238,7 @@ export function createAnimator({ state, tileIds = [], describePopup = () => null
   function makeTask(type, p) {
     for (const [id, amount] of CASH_DELTAS[type]?.(p) ?? []) addFloater(id, amount);
     addEffects(type, p);
+    addReactions(type, p);
     // 在落点格付租金或交税：金额出现后光边交棒，顺序是“停在这里 → 付了多少”
     if (type === 'paymentMade' && p.reason?.tileId) handOff(p.reason.tileId);
 
@@ -187,11 +273,13 @@ export function createAnimator({ state, tileIds = [], describePopup = () => null
         const n = p.path.length;
         if (!tok || n === 0) return null;
         const points = [p.from, ...p.path].map(gridOf);
+        const style = WALK_STYLES[(seats.get(p.playerId) ?? 0) % WALK_STYLES.length];
         focus = null;
         return {
           duration: duration(Math.min(n * STEP_MS, MAX_MOVE_MS)),
           landing: p.to,
           hold: landPause(),
+          onLand: () => addPose(p.playerId, 'land'),
           update(t) {
             const f = t * n;
             const i = Math.min(Math.floor(f), n - 1);
@@ -199,7 +287,9 @@ export function createAnimator({ state, tileIds = [], describePopup = () => null
             const e = easeInOut(u);
             tok.gx = lerp(points[i].gx, points[i + 1].gx, e);
             tok.gy = lerp(points[i].gy, points[i + 1].gy, e);
-            tok.z = t < 1 ? Math.sin(Math.PI * u) * 0.3 : 0;
+            tok.z = t < 1 ? Math.sin(Math.PI * u) * style.hop : 0;
+            // 每一步向左、下一步向右摇摆
+            tok.tilt = t < 1 ? Math.sin(Math.PI * u) * style.sway * (i % 2 ? -1 : 1) : 0;
           },
         };
       }
@@ -214,6 +304,7 @@ export function createAnimator({ state, tileIds = [], describePopup = () => null
           duration: duration(JAIL_MS),
           landing: p.to,
           hold: landPause(),
+          onLand: () => addPose(p.playerId, 'land'),
           update(t) {
             const e = easeInOut(t);
             tok.gx = lerp(from.gx, to.gx, e);
@@ -260,6 +351,8 @@ export function createAnimator({ state, tileIds = [], describePopup = () => null
     }
 
     floaters = floaters.filter((f) => now - f.born < FLOAT_MS);
+    for (const [id, pose] of poses) if (now - pose.born >= pose.ms) poses.delete(id);
+    coins = coins.filter((c) => now - c.born < c.ms);
     for (const [id, e] of effects) if (now - e.born >= e.ms) effects.delete(id);
     if (popup && now - popup.born >= popup.ms) popup = null;
     const bouncing = diceLandedAt !== null && now - diceLandedAt < DICE_BOUNCE_MS / speed;
@@ -271,7 +364,7 @@ export function createAnimator({ state, tileIds = [], describePopup = () => null
       onIdle();
     }
     const highlighting = focus !== null && now - focus.at < highlightMs() && !(now - (focus.cutAt ?? Infinity) >= GLOW_HANDOFF_MS / speed);
-    return busy || floaters.length > 0 || highlighting || bouncing || effects.size > 0 || popup !== null;
+    return busy || floaters.length > 0 || highlighting || bouncing || effects.size > 0 || popup !== null || poses.size > 0 || coins.length > 0;
   }
 
   /**
@@ -297,6 +390,9 @@ export function createAnimator({ state, tileIds = [], describePopup = () => null
     }
     floaters = [];
     effects.clear();
+    poses.clear();
+    coins = [];
+    for (const tok of tokens.values()) tok.tilt = 0;
     popup = null;
     diceLandedAt = null;
     dice.bounce = diceBounce(1);
@@ -358,6 +454,19 @@ export function createAnimator({ state, tileIds = [], describePopup = () => null
       if (current?.popup) current.duration = 0;
       onChange();
       return true;
+    },
+    /**
+     * 棋子当前的动作：playerId → { kind, dz, tilt, sx, sy, alpha }。
+     * dz 为额外跳起高度（格高为单位），tilt 为以底座为轴的倾斜（弧度），sx / sy 为压扁拉伸，alpha 为透明度。
+     */
+    get poses() {
+      const out = new Map();
+      for (const [id, pose] of poses) out.set(id, { kind: pose.kind, ...poseShape(pose.kind, Math.min(1, (lastNow - pose.born) / pose.ms)) });
+      return out;
+    },
+    /** 飞行中的金币：{ from, to, count, t }，t 为进度 0–1 */
+    get coins() {
+      return coins.map((c) => ({ from: c.from, to: c.to, count: c.count, t: Math.min(1, (lastNow - c.born) / c.ms) }));
     },
     /** 累计落地次数 */
     get landings() {

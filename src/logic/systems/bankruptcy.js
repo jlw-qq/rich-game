@@ -2,7 +2,7 @@
  * 逻辑层：付款、欠款与破产资产处置。
  * creditorId：null 表示银行；字符串表示单个玩家；字符串数组表示多位玩家平分（如“向每位玩家付款”卡）。
  */
-import { buildingRefund } from './property.js';
+import { announceGroups, buildingRefund } from './property.js';
 
 const ok = () => ({ ok: true });
 const fail = (error) => ({ ok: false, error });
@@ -109,4 +109,5 @@ export function liquidateForBankruptcy(ctx, debtorId, creditorId) {
     cash,
     properties: transferred,
   });
+  if (heir) announceGroups(ctx, heir.id, transferred);
 }

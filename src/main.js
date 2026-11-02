@@ -130,11 +130,12 @@ const EVENT_SOUNDS = {
   cashGained: 'coin',
   paymentMade: 'pay',
   sentToJail: 'jail',
-  playerBankrupt: 'jail',
+  playerBankrupt: 'bankrupt',
+  groupCompleted: 'group',
   gameOver: 'win',
 };
 /** 需要醒目显示的日志 */
-const HIGHLIGHT_EVENTS = new Set(['turnStarted', 'playerBankrupt', 'gameOver', 'debtPending', 'tradeProposed', 'choiceOffered', 'gambleRolled', 'auctionStarted', 'auctionWon', 'auctionUnsold']);
+const HIGHLIGHT_EVENTS = new Set(['groupCompleted', 'turnStarted', 'playerBankrupt', 'gameOver', 'debtPending', 'tradeProposed', 'choiceOffered', 'gambleRolled', 'auctionStarted', 'auctionWon', 'auctionUnsold']);
 
 /** AI 每步操作之间的间隔（毫秒），按播放倍速缩短 */
 const AI_DELAY_MS = 600;
@@ -218,6 +219,8 @@ function frame(now) {
     viewing,
     maxLevel: RULES.maxLevel,
     popup: animator?.popup ?? null,
+    poses: animator?.poses,
+    coins: animator?.coins,
     reducedMotion: reducedMotion.matches,
     view: viewport.view,
   });
@@ -332,7 +335,7 @@ function startSession(state, intro, online = null) {
     onEvent(type, payload) {
       const text = formatEvent(type, payload, fmtCtx);
       if (text) log.add(text, HIGHLIGHT_EVENTS.has(type) ? 'highlight' : 'info');
-      const name = EVENT_SOUNDS[type];
+      const name = type === 'paymentMade' && payload.reason?.type === 'rent' ? 'rent' : EVENT_SOUNDS[type];
       if (name) sound.play(name);
     },
     onChange: requestFrame,

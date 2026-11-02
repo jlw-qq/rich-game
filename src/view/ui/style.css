@@ -437,12 +437,18 @@ select:focus-visible {
 .log {
   list-style: none;
   margin: 0;
-  padding: 6px 10px;
+  padding: 4px 8px;
   border-radius: var(--radius-md);
-  background: var(--panel-2);
-  font-size: 0.85rem;
-  /* 收起时只有最近几条，退到次要位置 */
+  /* 收起时只有最近一条，退到次要位置：小一号字、虚线框、不加投影（底色仍用纸色，保证文字对比度） */
+  background: var(--panel);
+  border: 1px dashed var(--line);
+  font-size: 0.78rem;
   color: var(--muted);
+}
+
+/* 收起时重点条目也不加粗，只保留颜色 */
+.log:not(.log-expanded) .log-highlight {
+  font-weight: 400;
 }
 
 /* 展开后显示完整历史，在列表内滚动 */
@@ -708,7 +714,6 @@ select:focus-visible {
 .player,
 .setup-form,
 .tile-card,
-.log,
 .trade-dialog,
 .toolbar .btn {
   box-shadow: var(--paper-shadow);

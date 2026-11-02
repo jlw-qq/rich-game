@@ -14,6 +14,7 @@
  *   turn 为 active 里轮到的下标。
  */
 
+import { announceGroups } from './property.js';
 
 const ok = () => ({ ok: true });
 const fail = (error) => ({ ok: false, error });
@@ -84,6 +85,7 @@ function settle(ctx) {
   winner.cash -= a.high;
   state.properties[a.tileId].ownerId = winner.id;
   bus.emit('auctionWon', { playerId: winner.id, tileId: a.tileId, amount: a.high });
+  announceGroups(ctx, winner.id, [a.tileId]);
   state.auction = null;
   return true;
 }

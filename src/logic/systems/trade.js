@@ -5,6 +5,8 @@
  * 交易内容来自 UI 输入，执行前必须逐项校验；失败时状态不变。
  */
 
+import { announceGroups } from './property.js';
+
 const ok = () => ({ ok: true });
 const fail = (error) => ({ ok: false, error });
 
@@ -99,5 +101,7 @@ export function executeTrade(ctx, trade) {
   moveSide(ctx, from, to, checked.trade.give);
   moveSide(ctx, to, from, checked.trade.take);
   ctx.bus.emit('tradeAccepted', { trade: checked.trade });
+  announceGroups(ctx, to.id, checked.trade.give.properties);
+  announceGroups(ctx, from.id, checked.trade.take.properties);
   return ok();
 }

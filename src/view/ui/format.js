@@ -86,6 +86,8 @@ export function formatEvent(type, p, { state, board, cards }) {
       return `${name(p.playerId)} 买下 ${tileName(p.tileId)}，花费 ${money(p.price)}`;
     case 'purchaseDeclined':
       return `${name(p.playerId)} 没有买 ${tileName(p.tileId)}`;
+    case 'groupCompleted':
+      return `${name(p.playerId)} 凑齐了 ${p.tileIds.map(tileName).join('、')}，租金翻倍，可以盖楼了`;
     case 'auctionStarted':
       return `${tileName(p.tileId)} 开始拍卖，起拍价 ${money(p.start)}，${p.order.map(name).join('、')} 依次出价`;
     case 'auctionBid':

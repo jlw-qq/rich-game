@@ -4,7 +4,7 @@
  */
 
 /** 收起时显示的条数 */
-export const COLLAPSED_COUNT = 3;
+export const COLLAPSED_COUNT = 1;
 
 /**
  * 展开/收起按钮的文字。条数不超过收起时的显示数时不需要按钮，返回 null。
