@@ -18,11 +18,12 @@ export function createTradeDialog({ root, onSubmit }) {
   }
 
   /** 一边的输入区：地产勾选 + 现金 + 出狱卡。返回 { node, read } */
-  function sideEditor({ state, board, player, title, prefix }) {
+  function sideEditor({ state, board, player, title, prefix, preselect = [] }) {
     const owned = board.tiles.filter((t) => t.type === 'property' && state.properties[t.id].ownerId === player.id);
     const checks = owned.map((t) => {
       const locked = hasBuildings(state, board, t);
-      const input = el('input', { type: 'checkbox', id: `${prefix}-${t.id}`, value: t.id, disabled: locked });
+      // 预先勾选只对这一方手里、可以交易的地生效
+      const input = el('input', { type: 'checkbox', id: `${prefix}-${t.id}`, value: t.id, disabled: locked, checked: !locked && preselect.includes(t.id) });
       const prop = state.properties[t.id];
       const note = locked ? '（组内有建筑）' : prop.mortgaged ? '（已抵押）' : '';
       return {
@@ -61,13 +62,16 @@ export function createTradeDialog({ root, onSubmit }) {
 
   /**
    * 打开对话框。
-   * @param {{ state: object, board: object, playerId: string }} view
+   * @param {{ state: object, board: object, playerId: string, partnerId?: string, takeTileIds?: string[] }} view
+   *   partnerId 预选交易对象（已破产或不存在时退回第一位）；takeTileIds 在对方一侧预先勾选的地，
+   *   换了交易对象后不再勾选
    */
-  function open({ state, board, playerId }) {
+  function open({ state, board, playerId, partnerId: wanted = null, takeTileIds = [] }) {
     const me = state.players.find((p) => p.id === playerId);
     const others = state.players.filter((p) => p.id !== playerId && !p.bankrupt);
     if (!me || others.length === 0) return;
-    let partnerId = others[0].id;
+    let partnerId = others.some((p) => p.id === wanted) ? wanted : others[0].id;
+    const initialPartner = partnerId;
 
     const errorBox = el('p', { class: 'setup-errors', role: 'alert' });
     const body = el('div', { class: 'trade-body' });
@@ -77,7 +81,14 @@ export function createTradeDialog({ root, onSubmit }) {
     function renderSides() {
       const partner = state.players.find((p) => p.id === partnerId);
       mine = sideEditor({ state, board, player: me, title: `${me.name} 拿出`, prefix: 'trade-give' });
-      theirs = sideEditor({ state, board, player: partner, title: `换取 ${partner.name} 的`, prefix: 'trade-take' });
+      theirs = sideEditor({
+        state,
+        board,
+        player: partner,
+        title: `换取 ${partner.name} 的`,
+        prefix: 'trade-take',
+        preselect: partnerId === initialPartner ? takeTileIds : [],
+      });
       body.replaceChildren(mine.node, theirs.node);
       errorBox.textContent = '';
     }
@@ -85,7 +96,7 @@ export function createTradeDialog({ root, onSubmit }) {
     const partnerSelect = el(
       'select',
       { id: 'trade-partner', onchange: (e) => ((partnerId = e.target.value), renderSides()) },
-      others.map((p) => el('option', { value: p.id }, p.isAI ? `${p.name}（AI）` : p.name)),
+      others.map((p) => el('option', { value: p.id, selected: p.id === partnerId }, p.isAI ? `${p.name}（AI）` : p.name)),
     );
 
     function submit(e) {

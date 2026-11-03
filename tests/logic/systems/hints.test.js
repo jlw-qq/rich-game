@@ -114,6 +114,7 @@ describe('离目标还差多少', () => {
 
 describe('提示文字', () => {
   const quick = rulesFor('quick', 3);
+  const texts = (state, rules) => hintLines(state, board, rules, state.players[0]).map((l) => l.text);
 
   it('掷骰前：升级、凑组、目标各一行', () => {
     const { state } = setup(quick);
@@ -122,7 +123,7 @@ describe('提示文字', () => {
     state.players[0].cash = 9000;
     state.players[1].cash = 10000; // 加上太原 1,200 仍低于小红
     state.phase = 'awaitRoll';
-    expect(hintLines(state, board, quick, state.players[0])).toEqual([
+    expect(texts(state, quick)).toEqual([
       `可升级 2 块地，最划算：银川 花 ${money(500)}，租金 ${money(160)} → ${money(400)}`,
       '还差 太原 就凑齐整组，它在 小蓝 手里，可以试试交易',
       `你领先，离目标还差 ${money(quick.goalNetWorth - 9000 - 1200 - 2000)}`,
@@ -134,14 +135,14 @@ describe('提示文字', () => {
     own(state, 'p1', 'xining', 'yinchuan', 'shanghai');
     state.players[0].position = 39;
     state.phase = 'awaitDecision';
-    expect(hintLines(state, board, RULES, state.players[0])).toEqual(['买下 北京 就凑齐整组，空地租金 ×2，还能盖楼']);
+    expect(texts(state, RULES)).toEqual(['买下 北京 就凑齐整组，空地租金 ×2，还能盖楼']);
   });
 
   it('差的那块无主时写明无主', () => {
     const { state } = setup(RULES);
     own(state, 'p1', 'shanghai');
     state.phase = 'awaitRoll';
-    expect(hintLines(state, board, RULES, state.players[0])).toEqual(['还差 北京（无主）就凑齐整组，空地租金 ×2，还能盖楼']);
+    expect(texts(state, RULES)).toEqual(['还差 北京（无主）就凑齐整组，空地租金 ×2，还能盖楼']);
   });
 
   it('别人领先时写出双方差距；什么机会都没有时为空', () => {
@@ -150,11 +151,69 @@ describe('提示文字', () => {
     state.players[1].cash = 2000;
     state.players[2].cash = 500;
     state.phase = 'awaitRoll';
-    expect(hintLines(state, board, quick, state.players[0])).toEqual([
+    expect(texts(state, quick)).toEqual([
       `小蓝 领先，离目标还差 ${money(quick.goalNetWorth - 2000)}；你还差 ${money(quick.goalNetWorth - 1000)}`,
     ]);
     const { state: classic } = setup(RULES);
     classic.phase = 'awaitRoll';
-    expect(hintLines(classic, board, RULES, classic.players[0])).toEqual([]);
+    expect(texts(classic, RULES)).toEqual([]);
+  });
+});
+
+describe('提示里能直接执行的操作', () => {
+  const quick = rulesFor('quick', 3);
+  const actions = (state, rules, options) => hintLines(state, board, rules, state.players[0], options).map((l) => l.action ?? null);
+
+  it('掷骰前：升级最划算的一块、找地主交易；目标差距不带按钮', () => {
+    const { state } = setup(quick);
+    own(state, 'p1', 'xining', 'yinchuan', 'lanzhou', 'huhehaote');
+    own(state, 'p2', 'taiyuan');
+    state.players[0].cash = 9000;
+    state.phase = 'awaitRoll';
+    expect(actions(state, quick, { maxTradesPerTurn: 2 })).toEqual([
+      { kind: 'upgrade', tileId: 'yinchuan', label: '升级 银川' },
+      { kind: 'openTrade', partnerId: 'p2', takeTileIds: ['taiyuan'], label: '找 小蓝 交易' },
+      null,
+    ]);
+  });
+
+  it('本回合交易次数用完时不出交易按钮，文字照常', () => {
+    const { state } = setup(RULES);
+    own(state, 'p1', 'xining');
+    own(state, 'p2', 'yinchuan');
+    state.phase = 'awaitRoll';
+    state.tradesThisTurn = 2;
+    const lines = hintLines(state, board, RULES, state.players[0], { maxTradesPerTurn: 2 });
+    expect(lines).toEqual([{ text: '还差 银川 就凑齐整组，它在 小蓝 手里，可以试试交易' }]);
+  });
+
+  it('决定买地时：不能升级也不能交易，停着的那块凑组时不重复放「买下」', () => {
+    const { state } = setup(RULES);
+    own(state, 'p1', 'xining');
+    own(state, 'p2', 'yinchuan');
+    state.phase = 'awaitDecision';
+    expect(actions(state, RULES)).toEqual([null]);
+    const { state: here } = setup(RULES);
+    own(here, 'p1', 'xining', 'yinchuan', 'shanghai');
+    here.players[0].position = 39;
+    here.phase = 'awaitDecision';
+    expect(actions(here, RULES)).toEqual([null]);
+  });
+
+  it('差的那块无主：在棋盘上查看它', () => {
+    const { state } = setup(RULES);
+    own(state, 'p1', 'shanghai');
+    state.phase = 'awaitRoll';
+    expect(actions(state, RULES)).toEqual([{ kind: 'viewTile', tileId: 'beijing', label: '在棋盘上看 北京' }]);
+  });
+
+  it('现金刚好等于升级费也能升级；差 1 元就没有升级按钮', () => {
+    const { state } = setup(RULES);
+    own(state, 'p1', 'xining', 'yinchuan');
+    state.phase = 'awaitRoll';
+    state.players[0].cash = 500;
+    expect(actions(state, RULES)[0]).toMatchObject({ kind: 'upgrade' });
+    state.players[0].cash = 499;
+    expect(actions(state, RULES)).toEqual([]);
   });
 });

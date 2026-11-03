@@ -76,4 +76,13 @@ describe('查看状态', () => {
     s.setHover(10);
     expect(s.step(1)).toBe(11); // 悬停中按方向键，从悬停的格子继续
   });
+
+  it('pin 固定某格并清掉悬停；对同一格再 pin 不会取消', () => {
+    const s = createSelection(40);
+    s.setHover(5);
+    s.pin(12);
+    expect(s.current(7)).toEqual({ index: 12, source: 'pinned' });
+    s.pin(12);
+    expect(s.pinned).toBe(12);
+  });
 });

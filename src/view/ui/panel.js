@@ -14,36 +14,59 @@ import { PLAYER_COLORS, GROUP_COLORS } from '../render/theme.js';
  */
 
 /**
- * 把 turnHints 的结果写成提示文字。掷骰前才能升级，所以升级提示只在 awaitRoll 出现。
- * @returns {string[]}
+ * 把 turnHints 的结果写成提示：文字，加上可以直接执行的一个操作（没有就不带 action）。
+ * 掷骰前才能升级和交易，所以这两类按钮只在 awaitRoll 出现；交易还要本回合有剩余次数。
+ * 「买下就凑齐」不带按钮（下面已有「买下」主按钮），离目标的差距只是信息。
+ * @param {{ maxTradesPerTurn?: number }} [options]
+ * @returns {{ text: string, action?: Action }[]}
  */
-export function hintLines(state, board, rules, player) {
+export function hintLines(state, board, rules, player, { maxTradesPerTurn = Infinity } = {}) {
   const h = turnHints({ state, board, rules }, player.id);
   const tileName = (id) => board.tiles.find((t) => t.id === id).name;
   const name = (id) => state.players.find((p) => p.id === id)?.name;
+  const beforeRoll = state.phase === 'awaitRoll';
   const lines = [];
-  if (h.upgrades && state.phase === 'awaitRoll') {
+  if (h.upgrades && beforeRoll) {
     const { count, best } = h.upgrades;
     const head = count > 1 ? `可升级 ${count} 块地，最划算：` : '可升级：';
-    lines.push(`${head}${tileName(best.tileId)} 花 ${money(best.cost)}，租金 ${money(best.from)} → ${money(best.to)}`);
+    lines.push({
+      text: `${head}${tileName(best.tileId)} 花 ${money(best.cost)}，租金 ${money(best.from)} → ${money(best.to)}`,
+      action: { kind: 'upgrade', tileId: best.tileId, label: `升级 ${tileName(best.tileId)}` },
+    });
   }
   const g = h.groups[0];
   if (g) {
     const reward = `凑齐整组，空地租金 ×${rules.groupRentMultiplier}，还能盖楼`;
-    if (g.here) lines.push(`买下 ${tileName(g.tileId)} 就${reward}`);
-    else if (g.ownerId === null) lines.push(`还差 ${tileName(g.tileId)}（无主）就${reward}`);
-    else lines.push(`还差 ${tileName(g.tileId)} 就凑齐整组，它在 ${name(g.ownerId)} 手里，可以试试交易`);
+    if (g.here) lines.push({ text: `买下 ${tileName(g.tileId)} 就${reward}` });
+    else if (g.ownerId === null) {
+      lines.push({
+        text: `还差 ${tileName(g.tileId)}（无主）就${reward}`,
+        action: { kind: 'viewTile', tileId: g.tileId, label: `在棋盘上看 ${tileName(g.tileId)}` },
+      });
+    } else {
+      const canTrade = beforeRoll && state.tradesThisTurn < maxTradesPerTurn;
+      lines.push({
+        text: `还差 ${tileName(g.tileId)} 就凑齐整组，它在 ${name(g.ownerId)} 手里，可以试试交易`,
+        ...(canTrade && {
+          action: { kind: 'openTrade', partnerId: g.ownerId, takeTileIds: [g.tileId], label: `找 ${name(g.ownerId)} 交易` },
+        }),
+      });
+    }
   }
   if (h.goal) {
     // 目标金额已显示在顶部的目标栏，这里只写差距
-    lines.push(
-      h.goal.leaderId === player.id
-        ? `你领先，离目标还差 ${money(h.goal.myGap)}`
-        : `${name(h.goal.leaderId)} 领先，离目标还差 ${money(h.goal.leaderGap)}；你还差 ${money(h.goal.myGap)}`,
-    );
+    lines.push({
+      text:
+        h.goal.leaderId === player.id
+          ? `你领先，离目标还差 ${money(h.goal.myGap)}`
+          : `${name(h.goal.leaderId)} 领先，离目标还差 ${money(h.goal.leaderGap)}；你还差 ${money(h.goal.myGap)}`,
+    });
   }
   return lines;
 }
+
+/** 不改游戏状态的操作：动画播放中也能点 */
+const VIEW_ONLY = new Set(['viewTile']);
 
 /** 终局按钮不受动画和 AI 回合影响 */
 const ALWAYS_ENABLED = new Set(['rematch', 'newGame']);
@@ -326,18 +349,35 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
       ...mainActions(state, game).map((a) => (a.custom ? customBid(a, busy) : button(a, (busy && !ALWAYS_ENABLED.has(a.kind)) || Boolean(a.disabled)))),
     );
     renderAssets(state, game, board, busy, rules);
-    renderHints(state, board, rules, acting && !waiting && !acting.isAI ? acting : null);
+    renderHints(state, board, rules, acting && !waiting && !acting.isAI ? acting : null, busy);
   }
 
   /**
-   * 本回合机会：轮到本机真人、掷骰前或决定买地时，把能做的经营决策写成最多 3 行。
+   * 本回合机会：轮到本机真人、掷骰前或决定买地时，把能做的经营决策写成最多 3 行，
+   * 能直接做的带一个小按钮。
    * @param {object | null} player 正在操作的本机玩家；不是本机玩家时隐藏
    */
-  function renderHints(state, board, rules, player) {
+  function renderHints(state, board, rules, player, busy) {
     if (!hints) return;
-    const lines = player && rules && ['awaitRoll', 'awaitDecision'].includes(state.phase) ? hintLines(state, board, rules, player) : [];
+    const lines =
+      player && rules && ['awaitRoll', 'awaitDecision'].includes(state.phase) ? hintLines(state, board, rules, player, { maxTradesPerTurn }) : [];
     hints.hidden = lines.length === 0;
-    hints.replaceChildren(...lines.map((text) => el('li', {}, text)));
+    hints.replaceChildren(
+      ...lines.map(({ text, action }) =>
+        el(
+          'li',
+          { class: 'hint' },
+          el('span', { class: 'hint-text' }, text),
+          action && hintButton(action, busy && !VIEW_ONLY.has(action.kind)),
+        ),
+      ),
+    );
+  }
+
+  function hintButton(action, disabled) {
+    const b = button(action, disabled);
+    b.classList.add('hint-action');
+    return b;
   }
 
   /** 终局条件一直显示在侧栏：剩余轮数，以及（短局）目标资产和目前的领先者 */

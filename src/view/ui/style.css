@@ -333,6 +333,29 @@ select:focus-visible {
   display: none;
 }
 
+/* 每行：文字 + 一个能直接执行的小按钮；窄屏时按钮换到下一行 */
+.hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px 8px;
+  padding: 2px 0;
+}
+
+.hint-text {
+  flex: 1 1 14em;
+  min-width: 0;
+}
+
+.hint-action {
+  padding: 2px 8px;
+  font-size: 0.8rem;
+  background: var(--panel);
+  border-color: var(--accent);
+  white-space: nowrap;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;

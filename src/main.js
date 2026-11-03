@@ -490,11 +490,26 @@ function dispatch(action) {
     if (action.kind === 'rematch') return net?.conn.send({ t: 'toLobby' });
   }
   if (action.kind === 'newGame') return leaveToSetup();
+  // 只是在棋盘上查看某格，不是游戏操作：随时可以点，也不发给服务器
+  if (action.kind === 'viewTile') {
+    const index = board.tiles.findIndex((t) => t.id === action.tileId);
+    if (index >= 0) {
+      selection.pin(index);
+      requestFrame();
+    }
+    return;
+  }
   if (action.kind === 'rematch') return session && startGame(playerSetupOf(session.state), session.state.mode);
   // 动画播放中、AI 回合或联网时轮到别人，忽略操作
   if (!session || session.animator.busy || session.driver.isAiTurn() || notMyTurn(session)) return { ok: false, error: '现在不能操作' };
   if (action.kind === 'openTrade') {
-    tradeDialog.open({ state: session.state, board, playerId: session.game.actingPlayerId() });
+    tradeDialog.open({
+      state: session.state,
+      board,
+      playerId: session.game.actingPlayerId(),
+      partnerId: action.partnerId,
+      takeTileIds: action.takeTileIds,
+    });
     return;
   }
   if (session.online) {

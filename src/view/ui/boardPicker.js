@@ -28,6 +28,11 @@ export function createSelection(tileCount) {
     clear() {
       pinned = null;
     },
+    /** 固定查看某一格（不像 click 那样点同一格会取消），并清掉悬停，让它马上显示 */
+    pin(index) {
+      pinned = index;
+      hover = null;
+    },
     /** 方向键：从当前查看的格子（没有时从 from）前进或后退一格，并固定 */
     step(delta, from = 0) {
       const base = pinned ?? hover ?? from;
