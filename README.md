@@ -41,6 +41,7 @@ npm run server    # 先构建网页，再在 8787 端口启动
 | `PORT` | `8787` | 端口 |
 | `HOST` | `0.0.0.0` | 监听地址。只想自己测试时设为 `127.0.0.1` |
 | `DATA_DIR` | `server-data/rooms` | 房间存盘目录。服务器重启后从这里读回房间 |
+| `TRUST_PROXY` | 不设置 | 设为 `1` 时，按反向代理（如 Caddy）传来的 `X-Forwarded-For` 区分玩家 IP。只在服务器放在本机代理后面时设置 |
 
 开发联机功能时可以同时运行 `npm run dev` 和 `npm run server`，开发服务器会把联网连接转给 8787 端口。
 

@@ -4,6 +4,8 @@
  *
  * 用法：npm run server（先构建再启动）。环境变量 PORT（默认 8787）、HOST（默认 0.0.0.0，即局域网可访问）、
  * DATA_DIR（房间存盘目录，默认项目里的 server-data/rooms）。重启后读回所有房间，玩家凭令牌回到原座位。
+ * TRUST_PROXY=1：服务器放在本机的反向代理（如 Caddy）后面时设置，按 X-Forwarded-For 里的真实 IP 限制连接数；
+ * 直接对外时不要设置（否则来自本机的连接可以伪造 IP）。
  */
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
@@ -14,12 +16,14 @@ import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { createLobby } from '../src/logic/net/room.js';
 import { createRateLimiter } from '../src/logic/net/rateLimit.js';
+import { clientIp } from '../src/logic/net/clientIp.js';
 import { MAX_MESSAGE_BYTES, parseClientMessage } from '../src/logic/net/protocol.js';
 import { createRoomStore } from './storage.js';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = process.env.HOST ?? '0.0.0.0';
 const DIST = fileURLToPath(new URL('../dist/', import.meta.url));
+const TRUST_PROXY = process.env.TRUST_PROXY === '1';
 const DATA_DIR = process.env.DATA_DIR ?? fileURLToPath(new URL('../server-data/rooms/', import.meta.url));
 /** 每个连接：平均每秒 10 条，最多连发 30 条；超出直接断开 */
 const RATE = { capacity: 30, perSecond: 10 };
@@ -115,7 +119,7 @@ for (const { name, snapshot, error } of store.loadAll()) {
 if (lobby.roomCount() > 0) console.log(`读回 ${lobby.roomCount()} 个房间，等玩家重新连上`);
 
 wss.on('connection', (ws, req) => {
-  const ip = req.socket.remoteAddress ?? '?';
+  const ip = clientIp({ remoteAddress: req.socket.remoteAddress, forwardedFor: req.headers['x-forwarded-for'], trustProxy: TRUST_PROXY });
   if ((perIp.get(ip) ?? 0) >= MAX_CONNECTIONS_PER_IP) {
     ws.close(1008, 'too many connections');
     return;
@@ -185,6 +189,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 http.listen(PORT, HOST, () => {
   console.log(`城市大富翁联网服务器已启动，端口 ${PORT}`);
   console.log(`  本机：http://localhost:${PORT}/`);
+  if (TRUST_PROXY) console.log('  已开启 TRUST_PROXY：按反向代理传来的 X-Forwarded-For 区分玩家 IP');
   if (HOST === '0.0.0.0') {
     for (const list of Object.values(networkInterfaces())) {
       for (const a of list ?? []) if (a.family === 'IPv4' && !a.internal) console.log(`  局域网：http://${a.address}:${PORT}/`);
