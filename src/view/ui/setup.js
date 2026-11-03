@@ -70,6 +70,10 @@ export function createSetup({ root, rules, validate, onStart, onImport, daily, o
   // 默认你和 3 个普通 AI，和每日挑战的阵容一样
   let count = 4;
   let resume = null;
+  /** 朋友发来的挑战链接：{ code, config, by, score }；接受或关掉后清空 */
+  let invite = null;
+  /** 联机「加入」框里的房间码（邀请链接会预先填好） */
+  let roomCode = '';
   let mode = DEFAULT_MODE;
   const names = [...DEFAULT_NAMES];
   /** 联网时用的名字，默认取 1 号玩家的名字 */
@@ -106,8 +110,10 @@ export function createSetup({ root, rules, validate, onStart, onImport, daily, o
       type: 'text',
       maxlength: 8,
       placeholder: '4 位房间码',
+      value: roomCode,
       autocomplete: 'off',
       spellcheck: 'false',
+      oninput: (e) => (roomCode = e.target.value),
       onkeydown: (e) => {
         if (e.key !== 'Enter') return;
         e.preventDefault();
@@ -341,6 +347,7 @@ export function createSetup({ root, rules, validate, onStart, onImport, daily, o
         el('p', { class: 'setup-tagline' }, '10 分钟，和朋友争夺城市地产'),
         el('p', { class: 'muted setup-blurb' }, '掷骰买地、盖楼收租、和对手讨价还价，最先攒到 30,000 元的人拿下这座城市。'),
       ),
+      invite && inviteCard(errorBox),
       resume &&
         el(
           'div',
@@ -390,18 +397,83 @@ export function createSetup({ root, rules, validate, onStart, onImport, daily, o
     root.replaceChildren(form);
   }
 
+  /** 朋友的挑战邀请：谁、什么成绩、阵容，以及「接受挑战」 */
+  function inviteCard(errorBox) {
+    const { code, config, by, score } = invite;
+    const humans = config.kinds.filter((k) => k === 'human').length;
+    const lineup = `${MODES[config.mode].name} · ${config.kinds.length} 人${humans > 1 ? `（${humans} 位真人轮流操作）` : ''}`;
+    return el(
+      'div',
+      { class: 'setup-invite', role: 'group', 'aria-label': '朋友的挑战' },
+      el('p', {}, el('strong', {}, `${by ?? '朋友'}邀请你挑战`), score ? `：${scoreText(score)}` : ''),
+      el('p', { class: 'muted' }, `${lineup} · 挑战码 ${code}`, score ? ' · 对方自报成绩，打完能比一比' : ''),
+      el(
+        'div',
+        { class: 'actions' },
+        el(
+          'button',
+          {
+            type: 'button',
+            class: 'btn btn-primary',
+            onclick: () => {
+              const error = onCode(code);
+              if (error) errorBox.replaceChildren(el('li', {}, error));
+              else invite = null;
+            },
+          },
+          '接受挑战',
+        ),
+        el(
+          'button',
+          {
+            type: 'button',
+            class: 'btn',
+            onclick: () => {
+              invite = null;
+              render();
+              root.querySelector('.setup-entry[aria-pressed="true"]')?.focus();
+            },
+          },
+          '不了',
+        ),
+      ),
+    );
+  }
+
   return {
     /**
-     * @param {{ resume?: { label: string, onResume: () => void, onDiscard: () => void } | null, message?: string }} [options]
-     *   resume：有可继续的存档时显示；message：要提示的错误（如存档损坏）
+     * @param {{ resume?: { label: string, onResume: () => void, onDiscard: () => void } | null, message?: string,
+     *           invite?: { code: string, config: object, by: string | null, score: object | null } | null,
+     *           room?: string | null, editPlayers?: boolean }} [options]
+     *   resume：有可继续的存档时显示；message：要提示的错误（如存档损坏）；
+     *   invite：朋友的挑战链接（不传时保留上一次的）；room：邀请链接的房间码，切到「和朋友联机」并填好；
+     *   editPlayers：切到「开短局」并展开玩家设置（结算卡的「换个阵容」）
      */
-    show({ resume: r = null, message = '' } = {}) {
+    show({ resume: r = null, message = '', invite: inv, room = null, editPlayers = false } = {}) {
       resume = r;
+      if (inv !== undefined) invite = inv;
+      if (room) {
+        entry = 'online';
+        roomCode = room;
+      }
+      if (editPlayers) {
+        entry = 'local';
+        playersOpen = true;
+      }
       root.hidden = false;
       render();
       hero?.start();
       if (message) root.querySelector('.setup-errors')?.replaceChildren(el('li', {}, message));
-      (root.querySelector('.setup-resume .btn-primary') ?? root.querySelector('.setup-entry[aria-pressed="true"]'))?.focus();
+      const focus = invite
+        ? '.setup-invite .btn-primary'
+        : room
+          ? '#setup-online-name'
+          : editPlayers
+            ? '#setup-count'
+            : resume
+              ? '.setup-resume .btn-primary'
+              : '.setup-entry[aria-pressed="true"]';
+      root.querySelector(focus)?.focus();
     },
     hide() {
       root.hidden = true;

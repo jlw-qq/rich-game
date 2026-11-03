@@ -185,6 +185,67 @@ select:focus-visible {
   margin: 0 0 8px;
 }
 
+/* 朋友的挑战邀请：比「继续上一局」更显眼 */
+.setup-invite {
+  padding: 12px;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+}
+
+.setup-invite p {
+  margin: 0 0 6px;
+}
+
+/* 结算卡顶部的再来一局 / 换个阵容 / 返回 */
+.results-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 8px 0 10px;
+}
+
+/* 和朋友成绩的对比 */
+.results-vs {
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  font-weight: 600;
+}
+
+.results-vs-win {
+  border-left: 3px solid var(--accent);
+}
+
+.results-vs-lose {
+  border-left: 3px solid var(--danger);
+}
+
+/* 复制失败时显示的链接，方便手动选中复制 */
+.share-link {
+  width: 100%;
+  margin-top: 6px;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+}
+
+.share-link[hidden] {
+  display: none;
+}
+
+.lobby-invite .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
 .setup-row input[type='file'] {
   font-size: 0.85rem;
 }

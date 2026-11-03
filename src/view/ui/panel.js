@@ -69,8 +69,8 @@ export function hintLines(state, board, rules, player, { maxTradesPerTurn = Infi
 /** 不改游戏状态的操作：动画播放中也能点 */
 const VIEW_ONLY = new Set(['viewTile']);
 
-/** 终局按钮不受动画和 AI 回合影响 */
-const ALWAYS_ENABLED = new Set(['rematch', 'newGame']);
+/** 不受动画和 AI 回合影响的按钮（终局按钮已移到结算卡，暂时没有） */
+const ALWAYS_ENABLED = new Set();
 
 /**
  * @param {{
@@ -304,10 +304,8 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
       case 'turnEnd':
         return [{ kind: 'endTurn', label: state.doublesCount > 0 && !player.inJail ? '再掷一次' : '结束回合', primary: true }];
       case 'gameOver':
-        return [
-          { kind: 'rematch', label: viewer ? '回到房间' : '再来一局', primary: true },
-          { kind: 'newGame', label: viewer ? '返回菜单' : '返回设置' },
-        ];
+        // 再来一局、返回等按钮在结算卡顶部，这里不再重复
+        return [];
       default:
         return [];
     }

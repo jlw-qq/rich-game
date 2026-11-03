@@ -5,6 +5,8 @@ import { el } from './dom.js';
 import { brandHeading } from './brandHeading.js';
 import { PLAYER_COLORS } from '../render/theme.js';
 import { MODES } from '../../data/config/modes.js';
+import { canShare, shareOrCopy, SHARE_STATUS, pageUrl } from './clipboard.js';
+import { encodeRoomLink } from '../../logic/systems/shareLink.js';
 
 const SEAT_LABELS = { open: '空位 · 等人加入', closed: '关闭', normal: 'AI · 普通', easy: 'AI · 简单' };
 
@@ -39,6 +41,37 @@ export function createLobby({ root, send, onLeave }) {
     );
   }
 
+  /** 复制或分享邀请链接；复制失败时显示链接让人手动复制 */
+  function inviteRow(code) {
+    const link = pageUrl(encodeRoomLink(code));
+    const status = el('span', { class: 'muted', role: 'status' });
+    const manual = el('input', { type: 'text', class: 'share-link', readonly: true, hidden: true, value: link, 'aria-label': '邀请链接', onfocus: (e) => e.target.select() });
+    return el(
+      'div',
+      { class: 'lobby-invite' },
+      el(
+        'div',
+        { class: 'actions' },
+        el(
+          'button',
+          {
+            type: 'button',
+            class: 'btn',
+            onclick: async () => {
+              const r = await shareOrCopy({ title: '城市大富翁 · 联机邀请', text: `来城市大富翁一起玩，房间码 ${code}`, url: link });
+              status.textContent = SHARE_STATUS[r];
+              manual.hidden = r !== 'failed';
+              if (r === 'failed') manual.focus();
+            },
+          },
+          canShare() ? '分享邀请链接' : '复制邀请链接',
+        ),
+        status,
+      ),
+      manual,
+    );
+  }
+
   function render() {
     if (!room) return;
     const isHost = room.you === room.hostSeat;
@@ -49,7 +82,8 @@ export function createLobby({ root, send, onLeave }) {
         { class: 'setup-form lobby' },
         brandHeading('h1', 28, { suffix: '联网房间' }),
         el('p', { class: 'lobby-code' }, '房间码 ', el('strong', {}, room.code)),
-        el('p', { class: 'muted' }, '同一个局域网的朋友打开这个网页，输入房间码就能加入。'),
+        room.phase === 'lobby' && inviteRow(room.code),
+        el('p', { class: 'muted' }, '朋友打开邀请链接，或打开这个网页输入房间码，就能加入。'),
         el(
           'fieldset',
           { class: 'setup-modes' },

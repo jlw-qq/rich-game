@@ -38,6 +38,7 @@ import { formatEvent } from './view/ui/format.js';
 import { createLog } from './view/ui/log.js';
 import { createPanel } from './view/ui/panel.js';
 import { createResults } from './view/ui/results.js';
+import { parseShareParams, SHARE_PARAMS } from './logic/systems/shareLink.js';
 import { createSetup } from './view/ui/setup.js';
 import { createHero } from './view/render/hero.js';
 import { createTradeDialog } from './view/ui/trade.js';
@@ -56,7 +57,14 @@ const saveCtx = { board, rules: RULES, cards: CARDS };
 const canvas = /** @type {HTMLCanvasElement} */ ($('board'));
 const renderer = createBoardRenderer(canvas);
 const sound = createSound();
-const results = createResults($('results'), { onReplay: (code) => startCode(code) });
+const results = createResults($('results'), {
+  onReplay: (code) => startCode(code),
+  onRematch: () => dispatch({ kind: 'rematch' }),
+  onNewGame: () => dispatch({ kind: 'newGame' }),
+  onChangeLineup: () => leaveToSetup({ editPlayers: true }),
+});
+/** 朋友挑战链接带来的成绩：挑战码 → { by, score }。只在这次打开页面期间有效，打完同一挑战时拿来比较 */
+const friendScores = new Map();
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 /** localStorage 在隐私模式或沙箱里可能不可用，访问本身就会抛错 */
@@ -93,7 +101,9 @@ function challengeView(current) {
   const best = bestScore(state.challenge.code);
   const newBest = score !== null && isBetterScore(score, best);
   if (newBest) records.set(state.challenge.code, score);
-  current.challengeView = { ...state.challenge, score, best, newBest };
+  const by = state.players.find((p) => !p.isAI)?.name ?? '';
+  const friend = friendScores.get(state.challenge.code) ?? null;
+  current.challengeView = { ...state.challenge, score, best, newBest, by, friend };
   return current.challengeView;
 }
 
@@ -285,7 +295,7 @@ function renderPanel() {
   const { state, game, animator, driver, online } = session;
   // AI 回合中、联网时轮到别人时，人类按钮全部禁用
   panel.render({ state, game, board, busy: animator.busy || driver.isAiTurn() || notMyTurn(session), rules: session.rules, me: online?.me ?? null });
-  if (state.phase === PHASES.GAME_OVER) results.show({ rows: computeRanking({ state, board }), state, challenge: challengeView(session) });
+  if (state.phase === PHASES.GAME_OVER) results.show({ rows: computeRanking({ state, board }), state, challenge: challengeView(session), online: Boolean(session.online) });
   else results.hide();
   if (!animator.busy) {
     // 联网对局存在服务器上；动画播完告诉服务器，服务器等大家都看完再继续
@@ -755,21 +765,25 @@ function leaveRoom() {
   showSetup();
 }
 
-/** 显示开局界面；有可用的自动存档时提供“继续上一局” */
-function showSetup({ message = '' } = {}) {
+/**
+ * 显示开局界面；有可用的自动存档时提供“继续上一局”。
+ * 其余选项（invite、room、editPlayers）原样交给 setup.show。
+ */
+function showSetup({ message = '', ...options } = {}) {
   const saved = saveStore.load();
-  if (saved === null) return setup.show({ message });
+  if (saved === null) return setup.show({ message, ...options });
 
   const checked = saved.ok ? checkLoadedState(saved, saveCtx) : saved;
   if (!checked.ok) {
     if (checked.details) console.warn('自动存档校验失败：', checked.details);
     saveStore.clear();
-    return setup.show({ message: `上次的存档无法读取，已删除（${checked.error}）` });
+    return setup.show({ ...options, message: `上次的存档无法读取，已删除（${checked.error}）` });
   }
   const { state, savedAt } = checked;
   const names = state.players.map((p) => p.name).join('、');
   const when = savedAt ? new Date(savedAt).toLocaleString('zh-CN') : '';
   setup.show({
+    ...options,
     message,
     resume: {
       label: `上一局：${names} · 第 ${state.round} 轮${when ? ` · ${when}` : ''}`,
@@ -856,6 +870,26 @@ zoomOutButton.addEventListener('click', () => {
 $('export').addEventListener('click', downloadSave);
 $('quit').addEventListener('click', () => (session?.online ? leaveRoom() : leaveToSetup()));
 
+/**
+ * 读出分享链接的参数（挑战链接、邀请链接），然后从地址栏清掉，刷新时不会再弹一次。
+ * @returns {{ message?: string, invite?: object, room?: string }} 交给 showSetup 的选项
+ */
+function consumeShareLink() {
+  const share = parseShareParams(location.search);
+  const url = new URL(location.href);
+  if (SHARE_PARAMS.some((k) => url.searchParams.has(k))) {
+    SHARE_PARAMS.forEach((k) => url.searchParams.delete(k));
+    history.replaceState(history.state, '', url.pathname + url.search + url.hash);
+  }
+  if (share.challenge?.score) friendScores.set(share.challenge.code, { by: share.challenge.by, score: share.challenge.score });
+  return {
+    ...(share.error && { message: share.error }),
+    ...(share.challenge && { invite: share.challenge }),
+    ...(share.room && { room: share.room }),
+  };
+}
+const shareOptions = consumeShareLink();
+
 // 刷新前在联网房间里的话，凭令牌回到原来的座位
 const savedSeat = loadSeat();
 if (savedSeat) {
@@ -864,7 +898,7 @@ if (savedSeat) {
     net?.conn.close();
     net = null;
     saveSeat(null);
-    showSetup({ message: `没能回到联网房间：${error}` });
+    showSetup({ ...shareOptions, message: `没能回到联网房间：${error}` });
   });
-} else showSetup();
+} else showSetup(shareOptions);
 resize();
