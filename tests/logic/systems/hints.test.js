@@ -105,6 +105,16 @@ describe('离目标还差多少', () => {
     expect(turnHints(ctx, 'p1').goal.leaderGap).toBe(0);
   });
 
+  it('和别人并列领先时算自己领先', () => {
+    const quick = rulesFor('quick', 3);
+    const { state, ctx } = setup(quick);
+    state.players[0].cash = 4000;
+    state.players[1].cash = 4000;
+    state.players[2].cash = 1000;
+    expect(turnHints(ctx, 'p2').goal).toEqual({ leaderId: 'p2', leaderGap: quick.goalNetWorth - 4000, myGap: quick.goalNetWorth - 4000 });
+    expect(turnHints(ctx, 'p3').goal.leaderId).toBe('p1');
+  });
+
   it('破产的玩家没有提示', () => {
     const { state, ctx } = setup();
     state.players[0].bankrupt = true;

@@ -827,6 +827,74 @@ select:focus-visible {
   display: none;
 }
 
+/* 轮数条：这一局过了多少轮；最后一轮变成提醒色 */
+.round-bar,
+.goal-bar {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.round-bar {
+  margin-top: 4px;
+}
+
+.round-fill,
+.goal-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 300ms ease-out;
+}
+
+.round-fill {
+  background: var(--accent);
+}
+
+.goal-last {
+  color: var(--danger-text);
+}
+
+.goal-last .round-fill {
+  background: var(--danger);
+}
+
+/* 玩家卡片里的目标进度：条 + 百分比 + 领先标记 */
+.goal-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.goal-row .goal-bar {
+  flex: 1;
+  min-width: 0;
+}
+
+.goal-percent {
+  min-width: 2.6em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.tag-leader {
+  margin-left: 0;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .round-fill,
+  .goal-fill {
+    transition: none;
+  }
+}
+
 /* ---------- 拍卖出价 ---------- */
 
 .bid-form {

@@ -7,6 +7,7 @@ import { choiceDetail, money, tradeSideText } from './format.js';
 import { calcRent } from '../../logic/systems/property.js';
 import { minBid } from '../../logic/systems/auction.js';
 import { turnHints } from '../../logic/systems/hints.js';
+import { goalProgress } from '../../logic/systems/goal.js';
 import { PLAYER_COLORS, GROUP_COLORS } from '../render/theme.js';
 
 /**
@@ -131,9 +132,36 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
     );
   }
 
-  function renderPlayers(state, game) {
+  /**
+   * 玩家卡片里的目标进度条：长度 = 总资产 / 目标，用玩家自己的颜色。
+   * @param {import('../../logic/systems/goal.js').GoalEntry} entry
+   */
+  function goalBar(entry, goalWorth, player, color) {
+    const percent = Math.round(entry.ratio * 100);
+    return el(
+      'div',
+      { class: 'goal-row' },
+      el(
+        'span',
+        {
+          class: 'goal-bar',
+          role: 'progressbar',
+          'aria-valuemin': 0,
+          'aria-valuemax': goalWorth,
+          'aria-valuenow': Math.max(0, entry.worth),
+          'aria-valuetext': `${player.name} 总资产 ${money(entry.worth)} / ${money(goalWorth)}`,
+        },
+        el('span', { class: 'goal-fill', style: `width:${percent}%;background:${color}` }),
+      ),
+      el('span', { class: 'goal-percent' }, `${percent}%`),
+      entry.leader ? el('span', { class: 'tag tag-leader' }, '领先') : null,
+    );
+  }
+
+  function renderPlayers(state, game, progress) {
     // 终局后不再高亮“当前玩家”（可能指向刚破产的人）
     const current = state.phase === 'gameOver' ? null : game.currentPlayer()?.id;
+    const entryOf = (id) => progress?.players.find((e) => e.id === id) ?? null;
     const ownedCount = (id) => Object.values(state.properties).filter((p) => p.ownerId === id).length;
     players.replaceChildren(
       ...state.players.map((p, i) =>
@@ -164,6 +192,7 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
                     p.jailFreeCards.length > 0 ? ` · 出狱卡 ×${p.jailFreeCards.length}` : '',
                   ].join(''),
             ),
+            entryOf(p.id) && goalBar(entryOf(p.id), progress.goal, p, PLAYER_COLORS[i]),
           ),
         ),
       ),
@@ -336,8 +365,10 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
   function render({ state, game, board, busy, rules, me = null }) {
     viewer = me;
     currentRules = rules;
-    renderPlayers(state, game);
-    renderGoal(state, game, rules);
+    // 终局后结果卡里已有排名，不再画进度条
+    const progress = rules && state.phase !== 'gameOver' ? goalProgress({ state, board, rules }) : null;
+    renderPlayers(state, game, progress);
+    renderGoal(state, rules, progress);
     const acting = state.players.find((p) => p.id === game.actingPlayerId());
     const waiting = me && acting && acting.id !== me && state.phase !== 'gameOver';
     status.textContent = waiting
@@ -381,22 +412,41 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
   }
 
   /** 终局条件一直显示在侧栏：剩余轮数，以及（短局）目标资产和目前的领先者 */
-  function renderGoal(state, game, rules) {
+  function renderGoal(state, rules, progress) {
     if (!goal || !rules) return;
     if (state.phase === 'gameOver') {
       goal.hidden = true;
       return;
     }
     // “第 3/25 轮”比“剩余 22 轮”更不容易误读（当前这一轮算不算剩余）
+    const round = Math.min(state.round, rules.maxRounds);
     const last = state.round >= rules.maxRounds;
-    const parts = [last ? `最后一轮（${rules.maxRounds}/${rules.maxRounds}）` : `第 ${state.round}/${rules.maxRounds} 轮`];
-    if (rules.goalNetWorth > 0) {
-      const alive = state.players.filter((p) => !p.bankrupt);
-      const best = alive.reduce((a, b) => (game.netWorth(b.id) > game.netWorth(a.id) ? b : a));
-      parts.push(`目标总资产 ${money(rules.goalNetWorth)}`, `领先：${best.name} ${money(game.netWorth(best.id))}`);
+    const parts = [last ? `最后一轮（${rules.maxRounds}/${rules.maxRounds}）` : `第 ${round}/${rules.maxRounds} 轮`];
+    if (progress) {
+      // 每个人的进度在玩家卡片里，这里只写目标和领先者（并列时取座位靠前的一位）
+      const best = progress.players.find((e) => e.leader);
+      const name = state.players.find((p) => p.id === best.id).name;
+      parts.push(`目标总资产 ${money(progress.goal)}`, `领先：${name} ${money(best.worth)}`);
     }
     goal.hidden = false;
-    goal.textContent = parts.join(' · ');
+    goal.classList.toggle('goal-last', last);
+    // 经典模式上限 100 轮，进度条几乎不动，只在有目标的短局画轮数条
+    goal.replaceChildren(
+      el('span', { class: 'goal-text' }, parts.join(' · ')),
+      progress &&
+        el(
+          'span',
+          {
+            class: 'round-bar',
+            role: 'progressbar',
+            'aria-valuemin': 0,
+            'aria-valuemax': rules.maxRounds,
+            'aria-valuenow': round,
+            'aria-valuetext': `第 ${round} 轮，共 ${rules.maxRounds} 轮`,
+          },
+          el('span', { class: 'round-fill', style: `width:${Math.round((round / rules.maxRounds) * 100)}%` }),
+        ),
+    );
   }
 
   /** 动画播放中：只切换按钮的禁用状态，不重绘数字（避免提前显示结果） */

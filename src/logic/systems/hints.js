@@ -2,7 +2,8 @@
  * 逻辑层：本回合的经营机会（纯函数，不改状态）。表现层用它在操作区提示“现在能做什么”：
  * 能升级哪些地、升级后租金涨多少；差一块就凑齐的颜色组；离目标总资产还差多少。
  */
-import { calcRent, netWorth, rentAt, upgradeBlocker } from './property.js';
+import { calcRent, rentAt, upgradeBlocker } from './property.js';
+import { goalProgress } from './goal.js';
 
 /** 最多列出几个“差一块凑齐”的颜色组 */
 export const MAX_GROUP_HINTS = 2;
@@ -54,12 +55,12 @@ export function turnHints(ctx, playerId) {
   groups.sort((a, b) => Number(b.here) - Number(a.here));
 
   let goal = null;
-  if (rules.goalNetWorth > 0) {
-    const alive = state.players.filter((p) => !p.bankrupt);
-    const worth = new Map(alive.map((p) => [p.id, netWorth(ctx, p.id)]));
-    const leader = alive.reduce((a, b) => (worth.get(b.id) > worth.get(a.id) ? b : a));
-    const gap = (id) => Math.max(0, rules.goalNetWorth - worth.get(id));
-    goal = { leaderId: leader.id, leaderGap: gap(leader.id), myGap: gap(playerId) };
+  const progress = goalProgress(ctx);
+  if (progress) {
+    // 并列领先时，自己也是领先者之一就算自己领先，否则取座位靠前的一位
+    const mine = progress.players.find((p) => p.id === playerId);
+    const leader = mine.leader ? mine : progress.players.find((p) => p.leader);
+    goal = { leaderId: leader.id, leaderGap: leader.gap, myGap: mine.gap };
   }
 
   return { upgrades: count > 0 ? { count, best } : null, groups: groups.slice(0, MAX_GROUP_HINTS), goal };
