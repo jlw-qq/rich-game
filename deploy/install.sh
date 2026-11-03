@@ -38,6 +38,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # 先读进来：用代码包安装时 /opt/rich-game 会被整个替换，脚本所在目录可能随之消失
 SERVICE_TEMPLATE="$(cat "$SCRIPT_DIR/rich-game.service")" || die "找不到 $SCRIPT_DIR/rich-game.service"
 
+say "检查磁盘空间"
+# Node.js 约 100 MB，依赖和构建约 150 MB，再留些余量给房间存盘和日志
+need_mb=600
+for dir in / /var /opt; do
+  free_mb="$(df -Pm "$dir" | awk 'NR==2{print $4}')"
+  (( free_mb >= need_mb )) || die "$dir 所在磁盘只剩 ${free_mb} MB，至少要 ${need_mb} MB。先清理磁盘（见 deploy/README.md「磁盘满了」）"
+done
+echo "剩余空间够用"
+
 say "检查端口 $PORT 有没有被占用"
 if ss -ltnH "sport = :$PORT" | grep -q .; then
   if systemctl is-active --quiet "$SERVICE"; then
@@ -63,7 +72,11 @@ else
   apt-get update -q
   apt-get install -y -q nodejs
 fi
-NODE_BIN="$(command -v node)"
+NODE_BIN="$(command -v node)" || die "Node.js 没有装上"
+# apt 源更新失败时可能装成 Ubuntu 自带的旧版 Node（22.04 是 12.x），这里拦住
+installed_major="$("$NODE_BIN" -p 'process.versions.node.split(".")[0]')"
+(( installed_major >= NODE_MAJOR )) || die "装上的是 Node.js $("$NODE_BIN" -v)，需要 $NODE_MAJOR 或更新。多半是上面的 apt-get update 失败了，请先解决上面的报错"
+command -v npm >/dev/null || die "没有 npm（NodeSource 的 nodejs 包自带 npm）"
 echo "Node.js $("$NODE_BIN" -v)（$NODE_BIN），npm $(npm -v)"
 
 say "创建专用用户 $APP_USER（不能登录）"

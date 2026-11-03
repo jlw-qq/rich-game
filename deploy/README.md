@@ -76,6 +76,24 @@ sudo userdel richgame
 
 Node.js 和 git 留着；不需要的话 `sudo apt remove nodejs`。
 
+## 磁盘满了
+
+安装脚本开始时会检查剩余空间（至少 600 MB）。不够时先看是什么占的：
+
+```sh
+df -h                                                    # 哪个分区满了
+sudo du -xh --max-depth=1 / 2>/dev/null | sort -h | tail  # 根目录下哪个文件夹最大
+```
+
+常见的大头和清理方法（删之前先确认是不是还要用）：
+
+| 占用 | 查看 | 清理 |
+| --- | --- | --- |
+| apt 下载缓存 | `du -sh /var/cache/apt` | `sudo apt-get clean` |
+| 系统日志 | `journalctl --disk-usage` | `sudo journalctl --vacuum-size=200M` |
+| Docker 的镜像、停掉的容器、构建缓存 | `docker system df` | `docker image prune`、`docker builder prune`（会删掉不用的镜像和缓存） |
+| 旧日志文件 | `sudo du -sh /var/log` | 删掉 `/var/log` 下 `.gz`、`.1` 结尾的旧日志 |
+
 ## 打不开时
 
 1. 在服务器上 `curl -I http://127.0.0.1:8787/`：不通说明服务没起来，看 `journalctl -u rich-game -n 50`。
