@@ -1010,6 +1010,37 @@ select:focus-visible {
   font-size: 0.85rem;
 }
 
+/* 「开短局」折叠时的阵容摘要：一行文字 + 修改玩家 */
+.setup-lineup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+}
+
+.setup-lineup-text {
+  flex: 1 1 12em;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.setup-players {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.setup-players[hidden] {
+  display: none;
+}
+
+/* 选中入口的说明只在窄屏显示（宽屏写在入口按钮里） */
+.setup-entry-note {
+  display: none;
+  font-size: 0.85rem;
+}
+
 .setup-more summary {
   cursor: pointer;
   color: var(--muted);
@@ -1043,8 +1074,28 @@ select:focus-visible {
 }
 
 @media (max-width: 520px) {
+  /* 手机首屏：三个入口并排只放标题，说明挪到下面的面板里；长介绍收起，让开局按钮留在第一屏 */
   .setup-entries {
-    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .setup-entry {
+    padding: 8px 6px;
+    text-align: center;
+    align-items: center;
+  }
+
+  .setup-entry strong {
+    font-size: 0.95rem;
+  }
+
+  .setup-entry span,
+  .setup-blurb {
+    display: none;
+  }
+
+  .setup-entry-note {
+    display: block;
   }
 
   .setup-row label {

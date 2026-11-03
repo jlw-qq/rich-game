@@ -20,6 +20,30 @@ const KINDS = {
   easy: { label: 'AI · 简单', isAI: true, aiLevel: 'easy' },
 };
 
+const levelName = (kind) => KINDS[kind].label.replace('AI · ', '');
+
+/**
+ * 「开短局」折叠时显示的阵容摘要，例如「小红 + 3 个普通 AI · 4 人」。
+ * 人类玩家都写名字（空名字写「玩家 n」），AI 只按难度计数。
+ * @param {string[]} names
+ * @param {string[]} kinds 每个座位的类型（KINDS 的键）
+ * @param {number} count 实际人数，只看前 count 个座位
+ */
+export function lineupSummary(names, kinds, count) {
+  const seats = kinds.slice(0, count);
+  const humans = seats.flatMap((k, i) => (k === 'human' ? [names[i]?.trim() || `玩家 ${i + 1}`] : []));
+  const ai = Object.keys(KINDS)
+    .filter((k) => KINDS[k].isAI)
+    .map((k) => [k, seats.filter((s) => s === k).length])
+    .filter(([, n]) => n > 0);
+  const aiCount = ai.reduce((sum, [, n]) => sum + n, 0);
+  if (humans.length === 0) return `观战：${count} 个 AI`;
+  let aiText = '';
+  if (ai.length === 1) aiText = ` + ${aiCount} 个${levelName(ai[0][0])} AI`;
+  else if (ai.length > 1) aiText = ` + ${aiCount} 个 AI（${ai.map(([k, n]) => `${levelName(k)} ${n}`).join('、')}）`;
+  return `${humans.join('、')}${aiText} · ${count} 人`;
+}
+
 /**
  * @param {{
  *   root: HTMLElement,
@@ -41,6 +65,8 @@ export function createSetup({ root, rules, validate, onStart, onImport, daily, o
   let entry = 'local';
   /** 「更多设置」是否展开（重绘时保持） */
   let moreOpen = false;
+  /** 「开短局」的玩家设置是否展开；默认只显示一行阵容摘要（重绘时保持） */
+  let playersOpen = false;
   // 默认你和 3 个普通 AI，和每日挑战的阵容一样
   let count = 4;
   let resume = null;
@@ -54,7 +80,7 @@ export function createSetup({ root, rules, validate, onStart, onImport, daily, o
   /** 每日挑战的阵容说明：短局 · 你和 3 个普通 AI */
   const dailyLineup = (() => {
     const ai = DAILY_CHALLENGE.kinds.filter((k) => k !== 'human');
-    const levels = [...new Set(ai)].map((k) => KINDS[k].label.replace('AI · ', '')).join('/');
+    const levels = [...new Set(ai)].map(levelName).join('/');
     return `${MODES[DAILY_CHALLENGE.mode].name} · 你和 ${ai.length} 个${levels} AI`;
   })();
 
@@ -124,7 +150,10 @@ export function createSetup({ root, rules, validate, onStart, onImport, daily, o
           maxlength: 12,
           value: names[i],
           autocomplete: 'off',
-          oninput: (e) => (names[i] = e.target.value),
+          oninput: (e) => {
+            names[i] = e.target.value;
+            refreshSummary();
+          },
         }),
         el(
           'select',
@@ -132,7 +161,10 @@ export function createSetup({ root, rules, validate, onStart, onImport, daily, o
             id: `setup-kind-${i}`,
             class: 'setup-kind',
             'aria-label': `玩家 ${i + 1} 类型`,
-            onchange: (e) => (kinds[i] = e.target.value),
+            onchange: (e) => {
+              kinds[i] = e.target.value;
+              refreshSummary();
+            },
           },
           Object.entries(KINDS).map(([value, k]) => el('option', { value, selected: kinds[i] === value }, k.label)),
         ),
@@ -154,10 +186,38 @@ export function createSetup({ root, rules, validate, onStart, onImport, daily, o
       }),
     );
 
+    const summary = el('span', { class: 'setup-lineup-text' }, lineupSummary(names, kinds, count));
+    function refreshSummary() {
+      summary.textContent = lineupSummary(names, kinds, count);
+    }
     const localPanel = [
-      el('div', { class: 'setup-row' }, el('label', { for: 'setup-count' }, '玩家人数'), countSelect),
-      rows,
-      el('p', { class: 'muted setup-hint' }, '人类玩家轮流在同一台电脑上操作。全部设为 AI 就是观战模式。'),
+      el(
+        'div',
+        { class: 'setup-lineup' },
+        summary,
+        el(
+          'button',
+          {
+            type: 'button',
+            class: 'btn setup-lineup-toggle',
+            'aria-expanded': String(playersOpen),
+            'aria-controls': 'setup-players',
+            onclick: () => {
+              playersOpen = !playersOpen;
+              render();
+              root.querySelector(playersOpen ? '#setup-count' : '.setup-lineup-toggle')?.focus();
+            },
+          },
+          playersOpen ? '收起' : '修改玩家',
+        ),
+      ),
+      el(
+        'div',
+        { class: 'setup-players', id: 'setup-players', hidden: !playersOpen },
+        el('div', { class: 'setup-row' }, el('label', { for: 'setup-count' }, '玩家人数'), countSelect),
+        rows,
+        el('p', { class: 'muted setup-hint' }, '人类玩家轮流在同一台电脑上操作。全部设为 AI 就是观战模式。'),
+      ),
       el('button', { type: 'submit', class: 'btn btn-primary btn-large' }, mode === DEFAULT_MODE ? '开始短局' : `开始${MODES[mode].name}`),
     ];
 
@@ -260,7 +320,13 @@ export function createSetup({ root, rules, validate, onStart, onImport, daily, o
           });
           const errors = validate(players);
           if (errors.length > 0) {
-            errorBox.replaceChildren(...errors.map((msg) => el('li', {}, msg)));
+            // 错误多半出在名字上（重名、空名），展开玩家设置让人能改
+            if (!playersOpen) {
+              playersOpen = true;
+              render();
+            }
+            root.querySelector('.setup-errors').replaceChildren(...errors.map((msg) => el('li', {}, msg)));
+            root.querySelector('#setup-name-0')?.focus();
             return;
           }
           onStart(players, mode);
@@ -273,7 +339,7 @@ export function createSetup({ root, rules, validate, onStart, onImport, daily, o
         // 重绘时复用同一块画布，动画不会从头开始
         hero?.element,
         el('p', { class: 'setup-tagline' }, '10 分钟，和朋友争夺城市地产'),
-        el('p', { class: 'muted' }, '掷骰买地、盖楼收租、和对手讨价还价，最先攒到 30,000 元的人拿下这座城市。'),
+        el('p', { class: 'muted setup-blurb' }, '掷骰买地、盖楼收租、和对手讨价还价，最先攒到 30,000 元的人拿下这座城市。'),
       ),
       resume &&
         el(
@@ -313,6 +379,8 @@ export function createSetup({ root, rules, validate, onStart, onImport, daily, o
       el(
         'div',
         { class: `setup-panel${entry === 'online' ? ' setup-online' : ''}`, id: 'setup-panel', role: 'region', 'aria-label': current.title },
+        // 窄屏时入口按钮里只放标题，说明挪到这里
+        el('p', { class: 'muted setup-entry-note' }, current.note),
         current.panel,
       ),
       errorBox,
