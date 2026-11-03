@@ -53,7 +53,7 @@ mv "$APP_DIR/dist.new" "$APP_DIR/dist"
 say "重启服务"
 systemctl restart "$SERVICE"
 for _ in $(seq 1 20); do
-  curl -fsS -o /dev/null "http://127.0.0.1:$PORT/" && break
+  curl -fs -o /dev/null "http://127.0.0.1:$PORT/" && break
   sleep 0.5
 done
 if curl -fsS -o /dev/null "http://127.0.0.1:$PORT/"; then
