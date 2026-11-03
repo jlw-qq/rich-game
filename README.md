@@ -45,6 +45,8 @@ npm run server    # 先构建网页，再在 8787 端口启动
 
 开发联机功能时可以同时运行 `npm run dev` 和 `npm run server`，开发服务器会把联网连接转给 8787 端口。
 
+部署到 Linux 服务器（systemd 服务、开机自启、一键更新）见 [deploy/README.md](deploy/README.md)。
+
 ## 测试
 
 ```sh

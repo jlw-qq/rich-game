@@ -1,0 +1,39 @@
+[Unit]
+Description=城市大富翁联网服务器
+Documentation=https://github.com/jlw-qq/rich-game
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=richgame
+Group=richgame
+WorkingDirectory=/opt/rich-game
+# 直接对外提供服务（没有反向代理），所以不设 TRUST_PROXY
+Environment=NODE_ENV=production
+Environment=HOST=0.0.0.0
+Environment=PORT=8787
+Environment=DATA_DIR=/var/lib/rich-game/rooms
+ExecStart=/usr/bin/node server/index.js
+Restart=on-failure
+RestartSec=3
+# 出问题时最多每分钟重启 5 次，避免反复崩溃刷日志
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# 权限收紧：只能写房间存盘目录，看不到 /home，不能提权
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+StateDirectory=rich-game
+ReadWritePaths=/var/lib/rich-game
+
+[Install]
+WantedBy=multi-user.target
