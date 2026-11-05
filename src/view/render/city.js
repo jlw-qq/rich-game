@@ -67,6 +67,13 @@ export const PLAZA_MAX = SIDE - PLAZA_MIN;
 /** 四条主路在每边正中，把地块分成街区 */
 const SPOKE_HALF = 0.28;
 const EDGE = 0.5;
+/** 固定的少量车流，给城市路网一点生活气息 */
+const TRAFFIC = [
+  { gx: 4, gy: RING_MIN + ROAD_WIDTH / 2, axis: [1, 0], color: '#d65b43' },
+  { gx: 6, gy: RING_MAX - ROAD_WIDTH / 2, axis: [1, 0], color: '#e9ad36' },
+  { gx: RING_MIN + ROAD_WIDTH / 2, gy: 6, axis: [0, 1], color: '#4b91bf' },
+  { gx: RING_MAX - ROAD_WIDTH / 2, gy: 4, axis: [0, 1], color: '#9e6ab0' },
+];
 
 /**
  * 城市的地面布局：人行道（地块所在的街区底板）、道路、小公园。纯数据，坐标为网格矩形。
@@ -410,6 +417,57 @@ export function createCityPainter(ctx, layout, project) {
     }
   }
 
+  /** 小比例的静态等距汽车：车身、玻璃和双灯够在道路上读出形状即可 */
+  function car({ gx, gy, axis, color }) {
+    const length = 0.22;
+    const width = 0.12;
+    const height = th * 0.14;
+    const point = (along, across) => project(gx + axis[0] * along - axis[1] * across, gy + axis[1] * along + axis[0] * across);
+    const corners = [[-length, -width], [length, -width], [length, width], [-length, width]];
+    const base = corners.map(([a, b]) => point(a, b));
+    const top = base.map((p) => ({ x: p.x, y: p.y - height }));
+    const xy = (p) => [p.x, p.y];
+    const center = project(gx, gy);
+
+    ctx.beginPath();
+    ctx.ellipse(center.x, center.y + th * 0.025, th * 0.2, th * 0.08, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(25, 30, 31, 0.28)';
+    ctx.fill();
+    for (let i = 0; i < 4; i++) {
+      const j = (i + 1) % 4;
+      poly([xy(base[i]), xy(base[j]), xy(top[j]), xy(top[i])]);
+      ctx.fillStyle = shade(color, i === 1 ? 0.68 : 0.78);
+      ctx.fill();
+    }
+    poly(top.map(xy));
+    const paint = ctx.createLinearGradient(center.x - th * 0.14, center.y - height, center.x + th * 0.14, center.y - height);
+    paint.addColorStop(0, shade(color, 1.14));
+    paint.addColorStop(1, shade(color, 0.9));
+    ctx.fillStyle = paint;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(35, 36, 36, 0.72)';
+    ctx.lineWidth = Math.max(1, th * 0.018);
+    ctx.stroke();
+
+    const glass = [[-length * 0.18, -width * 0.68], [length * 0.48, -width * 0.68], [length * 0.48, width * 0.68], [-length * 0.18, width * 0.68]];
+    poly(glass.map(([a, b]) => {
+      const p = point(a, b);
+      return [p.x, p.y - height - th * 0.006];
+    }));
+    ctx.fillStyle = 'rgba(193, 224, 230, 0.92)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(45, 75, 82, 0.65)';
+    ctx.stroke();
+
+    for (const side of [-1, 1]) {
+      const light = point(length * 0.82, side * width * 0.7);
+      ctx.beginPath();
+      ctx.arc(light.x, light.y - height, Math.max(1, th * 0.018), 0, Math.PI * 2);
+      ctx.fillStyle = '#ffe5a1';
+      ctx.fill();
+    }
+  }
+
   /**
    * 画城市地面：街区人行道、道路（带中线）、小公园。地面是平的，在格子和建筑之前画。
    * @param {ReturnType<typeof cityGround>} ground
@@ -480,6 +538,7 @@ export function createCityPainter(ctx, layout, project) {
       ctx.stroke();
     }
     ctx.setLineDash([]);
+    TRAFFIC.forEach(car);
     ctx.lineWidth = 1;
     ctx.strokeStyle = 'rgba(30, 60, 25, 0.5)';
     parks.forEach((pk, k) => {
