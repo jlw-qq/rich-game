@@ -196,8 +196,8 @@ describe('存档', () => {
   });
 
   it('版本 5 存档迁移后没有拍卖', () => {
-    expect(STATE_VERSION).toBe(6);
-    expect(migrateState({ version: 5, players: [] })).toMatchObject({ version: 6, auction: null });
+    expect(STATE_VERSION).toBeGreaterThanOrEqual(6);
+    expect(migrateState({ version: 5, players: [] })).toMatchObject({ version: STATE_VERSION, auction: null });
   });
 });
 

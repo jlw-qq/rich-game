@@ -7,6 +7,7 @@ import { AI_LEVELS, MAX_NAME_LENGTH, STATE_VERSION } from './gameState.js';
 import { prepareTrade } from '../systems/trade.js';
 import { MODES, rulesFor } from '../../data/config/modes.js';
 import { challengeErrors } from '../systems/challenge.js';
+import { actionLogErrors } from './actionLog.js';
 
 const isInt = (v) => Number.isInteger(v);
 const isNonNegInt = (v) => isInt(v) && v >= 0;
@@ -187,6 +188,7 @@ export function validateState(state, { board, rules: baseRules, cards }) {
 
   // ---- 挑战码：存档里看不到原始种子，只核对模式和座位
   errors.push(...challengeErrors(state.challenge, { mode: state.mode, players }));
+  errors.push(...actionLogErrors(state.actionLog));
 
   // ---- 终局
   if (state.phase === PHASES.GAME_OVER) {

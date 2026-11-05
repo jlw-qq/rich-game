@@ -13,7 +13,8 @@ export function createRateLimiter({ capacity, perSecond, now }) {
     /** @returns {boolean} 还有令牌时取走一个并返回 true */
     take() {
       const t = now();
-      tokens = Math.min(capacity, tokens + ((t - last) / 1000) * perSecond);
+      // 系统时间被往回调时（如 NTP 校时）不扣令牌
+      tokens = Math.min(capacity, tokens + (Math.max(0, t - last) / 1000) * perSecond);
       last = t;
       if (tokens < 1) return false;
       tokens -= 1;

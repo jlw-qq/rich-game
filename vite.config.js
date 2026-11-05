@@ -5,8 +5,8 @@ export default defineConfig({
     // 只监听本机，不暴露到局域网
     host: 'localhost',
     port: 5173,
-    // 开发时联网消息转给 npm run server 起的服务器
-    proxy: { '/ws': { target: 'ws://localhost:8787', ws: true } },
+    // 开发时联网消息和排行榜接口转给 npm run server 起的服务器
+    proxy: { '/ws': { target: 'ws://localhost:8787', ws: true }, '/api': { target: 'http://localhost:8787' } },
   },
   test: {
     // 逻辑层是纯 JS，用 node 环境跑即可，无需 DOM

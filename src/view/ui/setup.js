@@ -53,6 +53,7 @@ export function lineupSummary(names, kinds, count) {
  *   onImport: (file: File) => Promise<string | null>,
  *   daily: () => { dateKey: string, best: object | null },
  *   onDaily: () => void,
+ *   onBoard?: (dateKey: string) => void,
  *   onCode: (text: string) => string | null,
  *   onCreateRoom: (name: string) => Promise<string | null>,
  *   onJoinRoom: (code: string, name: string) => Promise<string | null>,
@@ -60,7 +61,7 @@ export function lineupSummary(names, kinds, count) {
  * }} options onImport、onCode、onCreateRoom、onJoinRoom 返回错误信息，成功返回 null；daily 给出今天的日期和本机最好成绩；
  *   hero 为首屏主视觉（微缩城市动画），开局页显示时播放、隐藏时停下
  */
-export function createSetup({ root, rules, validate, onStart, onImport, daily, onDaily, onCode, onCreateRoom, onJoinRoom, hero = null }) {
+export function createSetup({ root, rules, validate, onStart, onImport, daily, onDaily, onBoard = () => {}, onCode, onCreateRoom, onJoinRoom, hero = null }) {
   /** 当前展开的入口：local 开短局 / online 和朋友联机 / daily 今日挑战 */
   let entry = 'local';
   /** 「更多设置」是否展开（重绘时保持） */
@@ -247,7 +248,12 @@ export function createSetup({ root, rules, validate, onStart, onImport, daily, o
         el('strong', {}, `${dateLabel(today.dateKey)} · ${dailyLineup}`),
         el('span', { class: 'muted' }, today.best ? `本机最好：${scoreText(today.best)}` : '所有人今天玩的是同一局，可以重玩，只记最好成绩'),
       ),
-      el('button', { type: 'button', id: 'setup-daily', class: 'btn btn-primary btn-large', onclick: onDaily }, '开始今日挑战'),
+      el(
+        'div',
+        { class: 'actions' },
+        el('button', { type: 'button', id: 'setup-daily', class: 'btn btn-primary btn-large', onclick: onDaily }, '开始今日挑战'),
+        el('button', { type: 'button', class: 'btn', onclick: () => onBoard(today.dateKey) }, '查看排行榜'),
+      ),
       el(
         'div',
         { class: 'setup-row' },

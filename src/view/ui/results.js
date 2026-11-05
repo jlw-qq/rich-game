@@ -100,10 +100,12 @@ export function createResults(root, { onReplay = () => {}, onRematch = () => {},
    * @param {{ rows: ReturnType<typeof import('../../logic/core/results.js').computeRanking>,
    *           state: object,
    *           online?: boolean,
+   *           board?: HTMLElement | null,
    *           challenge?: { code: string, daily: string | null, score: object | null, best: object | null, newBest: boolean } | null }} view
-   *   challenge：best 是本局之前的本机最好成绩，newBest 表示本局刷新了纪录
+   *   challenge：best 是本局之前的本机最好成绩，newBest 表示本局刷新了纪录；
+   *   board：每日挑战的「上榜」区块（调用方每局只建一次，重绘时传同一个节点）
    */
-  function show({ rows, state, challenge = null, online = false }) {
+  function show({ rows, state, challenge = null, online = false, board = null }) {
     const seatOf = (id) => state.players.findIndex((p) => p.id === id);
     const reason = {
       roundLimit: `打满 ${state.round} 轮回合上限，按总资产排名`,
@@ -150,6 +152,7 @@ export function createResults(root, { onReplay = () => {}, onRematch = () => {},
           ),
         ),
       ),
+      board,
       challenge && challengeSection(challenge, onReplay),
     );
     root.hidden = false;

@@ -14,8 +14,9 @@ import { challengeErrors } from '../systems/challenge.js';
  * 版本 4：新增城市事件卡（pendingChoice、eventRngState），部分旧卡被替换
  * 版本 5：新增挑战码（challenge），见 systems/challenge.js
  * 版本 6：新增地产拍卖（auction），见 systems/auction.js
+ * 版本 7：新增人类玩家操作记录（actionLog），排行榜靠它重放核实成绩，见 core/actionLog.js
  */
-export const STATE_VERSION = 6;
+export const STATE_VERSION = 7;
 export const MAX_NAME_LENGTH = 12;
 /** AI 难度 */
 export const AI_LEVELS = ['easy', 'normal'];
@@ -139,6 +140,8 @@ export function createInitialState({ board, rules, players, seed, cards = [], mo
     winnerId: null,
     /** 终局原因：'bankruptcy' | 'roundLimit' | 'goal' */
     endReason: null,
+    /** 人类玩家成功执行的操作，按顺序（AI 的不记）。null 表示这局不能重放 */
+    actionLog: [],
   };
 }
 
@@ -162,6 +165,8 @@ export function migrateState(state) {
   if (s.version === 4) s = { ...s, version: 5, challenge: null };
   // 旧存档里不会有进行中的拍卖
   if (s.version === 5) s = { ...s, version: 6, auction: null };
+  // 旧存档前面的操作没有记下来，不能重放、不能上榜
+  if (s.version === 6) s = { ...s, version: 7, actionLog: null };
   return s;
 }
 

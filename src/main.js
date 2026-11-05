@@ -39,6 +39,9 @@ import { createLog } from './view/ui/log.js';
 import { createPanel } from './view/ui/panel.js';
 import { createResults } from './view/ui/results.js';
 import { parseShareParams, SHARE_PARAMS } from './logic/systems/shareLink.js';
+import { recordAction } from './logic/core/actionLog.js';
+import { createScoresClient } from './view/net/scores.js';
+import { createLeaderboardDialog, createSubmitSection } from './view/ui/leaderboard.js';
 import { createSetup } from './view/ui/setup.js';
 import { createHero } from './view/render/hero.js';
 import { createTradeDialog } from './view/ui/trade.js';
@@ -77,6 +80,22 @@ function getStorage() {
 }
 const saveStore = createSaveStore(getStorage());
 const records = createRecordStore(getStorage());
+const scoresClient = createScoresClient(getStorage());
+const leaderboard = createLeaderboardDialog({ root: /** @type {HTMLDialogElement} */ ($('leaderboard')), client: scoresClient });
+
+/**
+ * 每日挑战打完后的「上榜」区块。每局只建一次（重绘结算卡时复用），不能上榜时为 null：
+ * 联网对局、不是每日挑战、全 AI、或操作记录不完整（旧存档读进来的）。
+ */
+function boardSection(current) {
+  if (current.boardSection !== undefined) return current.boardSection;
+  const { state } = current;
+  const ok = !current.online && state.challenge?.daily && Array.isArray(state.actionLog) && state.players.some((p) => !p.isAI);
+  current.boardSection = ok
+    ? createSubmitSection({ code: state.challenge.code, date: state.challenge.daily, actions: state.actionLog }, { client: scoresClient, onView: leaderboard.open })
+    : null;
+  return current.boardSection;
+}
 
 /** 本机记录的某个挑战码最好成绩，记录损坏时当作没有 */
 function bestScore(code) {
@@ -295,7 +314,15 @@ function renderPanel() {
   const { state, game, animator, driver, online } = session;
   // AI 回合中、联网时轮到别人时，人类按钮全部禁用
   panel.render({ state, game, board, busy: animator.busy || driver.isAiTurn() || notMyTurn(session), rules: session.rules, me: online?.me ?? null });
-  if (state.phase === PHASES.GAME_OVER) results.show({ rows: computeRanking({ state, board }), state, challenge: challengeView(session), online: Boolean(session.online) });
+  if (state.phase === PHASES.GAME_OVER) {
+    results.show({
+      rows: computeRanking({ state, board }),
+      state,
+      challenge: challengeView(session),
+      online: Boolean(session.online),
+      board: boardSection(session),
+    });
+  }
   else results.hide();
   if (!animator.busy) {
     // 联网对局存在服务器上；动画播完告诉服务器，服务器等大家都看完再继续
@@ -369,6 +396,8 @@ function startSession(state, intro, online = null) {
     rules,
     aiTimer: null,
     challengeView: null,
+    /** 结算卡的「上榜」区块，第一次显示结算时建立；undefined 表示还没建 */
+    boardSection: undefined,
     /** seq：收到的最新一批；acked：已经告诉服务器播完的一批 */
     online: online && { me: online.me, seq: 0, acked: 0 },
   };
@@ -534,6 +563,8 @@ function dispatch(action) {
     sound.play('error');
     return result;
   }
+  // 记下成功的人类操作，每日挑战打完后服务器靠它重放核实成绩
+  recordAction(session.state, action);
   if (session.animator.busy) {
     panel.setBusy(true);
   } else {
@@ -575,6 +606,7 @@ const setup = createSetup({
   },
   onDaily: startDaily,
   onCode: startCode,
+  onBoard: (dateKey) => leaderboard.open(dateKey),
   onCreateRoom: (name) => request({ t: 'create', name }),
   onJoinRoom: (code, name) => request({ t: 'join', code, name }),
   hero: createHero({ board, rules: RULES, reducedMotion: reducedMotion.matches }),

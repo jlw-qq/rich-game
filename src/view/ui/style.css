@@ -239,6 +239,102 @@ select:focus-visible {
   display: none;
 }
 
+/* ---------- 每日挑战排行榜 ---------- */
+
+.results-board {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.results-board h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+
+.results-board p {
+  margin: 6px 0 0;
+}
+
+.board-submit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.board-submit input {
+  flex: 1 1 8em;
+  min-width: 0;
+  font: inherit;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+}
+
+.board-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+}
+
+.board-list {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+}
+
+.board-row {
+  display: grid;
+  grid-template-columns: 2.4em minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.board-me {
+  background: var(--panel-2);
+  border-left: 3px solid var(--accent);
+  font-weight: 600;
+}
+
+.board-rank {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.board-name {
+  overflow-wrap: anywhere;
+}
+
+.board-score {
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.board-note {
+  font-size: 0.8rem;
+}
+
+/* 窄屏：成绩换到名字下面 */
+@media (max-width: 520px) {
+  .board-row {
+    grid-template-columns: 2.4em minmax(0, 1fr);
+  }
+
+  .board-score {
+    grid-column: 2;
+    text-align: left;
+    color: var(--muted);
+  }
+}
+
 .lobby-invite .actions {
   display: flex;
   flex-wrap: wrap;

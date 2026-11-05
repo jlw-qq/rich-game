@@ -4,6 +4,7 @@
  *
  * 用法：npm run server（先构建再启动）。环境变量 PORT（默认 8787）、HOST（默认 0.0.0.0，即局域网可访问）、
  * DATA_DIR（房间存盘目录，默认项目里的 server-data/rooms）。重启后读回所有房间，玩家凭令牌回到原座位。
+ * 每日挑战排行榜存在 DATA_DIR 旁边的 leaderboard/（可用 SCORES_DIR 改），接口见 server/leaderboard.js。
  * TRUST_PROXY=1：服务器放在本机的反向代理（如 Caddy）后面时设置，按 X-Forwarded-For 里的真实 IP 限制连接数；
  * 直接对外时不要设置（否则来自本机的连接可以伪造 IP）。
  */
@@ -19,12 +20,19 @@ import { createRateLimiter } from '../src/logic/net/rateLimit.js';
 import { clientIp } from '../src/logic/net/clientIp.js';
 import { MAX_MESSAGE_BYTES, parseClientMessage } from '../src/logic/net/protocol.js';
 import { createRoomStore } from './storage.js';
+import { createScoresApi } from './leaderboard.js';
+import { createBoard } from '../src/logic/core/board.js';
+import { TILES, GROUPS } from '../src/data/config/board.js';
+import { RULES } from '../src/data/config/rules.js';
+import { CARDS } from '../src/data/config/cards.js';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = process.env.HOST ?? '0.0.0.0';
 const DIST = fileURLToPath(new URL('../dist/', import.meta.url));
 const TRUST_PROXY = process.env.TRUST_PROXY === '1';
 const DATA_DIR = process.env.DATA_DIR ?? fileURLToPath(new URL('../server-data/rooms/', import.meta.url));
+/** 排行榜和房间存盘放在同一个父目录下（部署时都在 /var/lib/rich-game 里） */
+const SCORES_DIR = process.env.SCORES_DIR ?? join(DATA_DIR, '..', 'leaderboard');
 /** 每个连接：平均每秒 10 条，最多连发 30 条；超出直接断开 */
 const RATE = { capacity: 30, perSecond: 10 };
 /** 同一个 IP 最多同时连几个（同一台电脑开多个标签页也要能玩） */
@@ -74,7 +82,19 @@ async function serveStatic(req, res) {
   }
 }
 
-const http = createServer(serveStatic);
+const scores = createScoresApi({
+  dir: SCORES_DIR,
+  board: createBoard({ tiles: TILES, groups: GROUPS, rules: RULES }),
+  cards: CARDS,
+  ipOf: (req) => clientIp({ remoteAddress: req.socket.remoteAddress, forwardedFor: req.headers['x-forwarded-for'], trustProxy: TRUST_PROXY }),
+});
+// 每小时清一次过期榜单和闲置的限流器
+setInterval(() => scores.prune(), 3_600_000).unref();
+
+const http = createServer((req, res) => {
+  if (scores.handle(req, res)) return;
+  serveStatic(req, res);
+});
 const wss = new WebSocketServer({
   server: http,
   path: '/ws',
