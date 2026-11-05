@@ -29,21 +29,21 @@ export const TILE_COLORS = {
 /** 棋盘中央与格子装饰 */
 export const BOARD_COLORS = {
   /** 中央积木底板 */
-  center: '#5a9150',
+  center: '#355e54',
   /** 底板上的凸点：亮面和暗面 */
-  studLight: 'rgba(255, 255, 255, 0.22)',
-  studDark: 'rgba(20, 50, 15, 0.28)',
+  studLight: 'rgba(255, 255, 255, 0.18)',
+  studDark: 'rgba(12, 32, 28, 0.28)',
   /** 城市中心广场（放骰子），以及写在广场上的小字 */
-  plaza: '#e9dfc9',
-  plazaText: '#3b2a1a',
+  plaza: '#eadcc3',
+  plazaText: '#30271d',
   /** 统一的格子描边 */
-  outline: 'rgba(60, 40, 20, 0.55)',
+  outline: 'rgba(43, 32, 23, 0.62)',
   /** 积木块顶面边缘的高光，做出倒角感 */
-  bevel: 'rgba(255, 255, 255, 0.75)',
+  bevel: 'rgba(255, 255, 255, 0.62)',
   /** 投影偏暖，落在木桌上更自然 */
-  shadow: 'rgba(60, 35, 10, 0.45)',
-  text: '#2b2118',
-  subText: '#5e4d3b',
+  shadow: 'rgba(34, 24, 17, 0.48)',
+  text: '#2b241d',
+  subText: '#57483a',
 };
 
 /** 非地产格的图标颜色，比格子底色深，保证对比度 */

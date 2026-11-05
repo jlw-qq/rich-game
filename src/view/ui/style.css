@@ -38,7 +38,7 @@
     repeating-linear-gradient(88deg, rgb(255 255 255 / 0.015) 0 1px, transparent 1px 31px) fixed,
     linear-gradient(180deg, var(--table-light), var(--table) 40%, var(--table-dark)) fixed var(--table);
   /* 纸质面板放在桌面上的投影 */
-  --paper-shadow: 0 1px 0 rgb(255 255 255 / 0.6) inset, 0 2px 6px rgb(60 35 10 / 0.25);
+  --paper-shadow: 0 1px 0 rgb(255 255 255 / 0.7) inset, 0 3px 9px rgb(60 35 10 / 0.22), 0 1px 2px rgb(60 35 10 / 0.12);
 }
 
 * {
@@ -441,7 +441,7 @@ select:focus-visible {
 #board {
   display: block;
   /* 棋盘像摆在桌面上：沿棋盘轮廓（画布透明处不投影）落一层柔和的大投影 */
-  filter: drop-shadow(0 14px 22px rgb(60 35 10 / 0.35));
+  filter: drop-shadow(0 18px 28px rgb(43 27 14 / 0.42));
   border-radius: var(--radius-lg);
   background: transparent;
   /* 触屏点选不触发双击缩放 */
@@ -464,6 +464,7 @@ select:focus-visible {
   padding: 12px;
   border-radius: var(--radius-lg);
   background: var(--panel);
+  border: 1px solid rgb(96 70 39 / 0.16);
 }
 
 .status {
@@ -534,12 +535,14 @@ select:focus-visible {
   gap: 10px;
   padding: 8px 10px;
   border-radius: var(--radius-md);
-  background: var(--panel);
+  background: linear-gradient(115deg, #fffdf8, var(--panel) 72%);
   border: 2px solid transparent;
 }
 
 .player-current {
   border-color: var(--accent);
+  background: linear-gradient(115deg, #e4eef2, var(--panel) 72%);
+  box-shadow: inset 4px 0 var(--accent), 0 2px 6px rgb(47 111 179 / 0.12);
 }
 
 .player-bankrupt {

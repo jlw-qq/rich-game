@@ -390,13 +390,22 @@ export function createCityPainter(ctx, layout, project) {
   /** 一棵小树：树干 + 两层树冠 */
   function tree(x, y, k) {
     const s = th * (0.85 + (k % 3) * 0.12);
+    ctx.beginPath();
+    ctx.ellipse(x, y - s * 0.02, s * 0.2, s * 0.08, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(28, 49, 31, 0.2)';
+    ctx.fill();
     ctx.fillStyle = '#6b4a2b';
     ctx.fillRect(x - s * 0.03, y - s * 0.16, s * 0.06, s * 0.16);
-    for (const [dy, r, c] of [[0.2, 0.16, '#3f8a3a'], [0.34, 0.11, '#58a64f']]) {
+    for (const [dy, r, c] of [[0.2, 0.16, '#367846'], [0.34, 0.11, '#69a954']]) {
       ctx.beginPath();
       ctx.arc(x, y - s * dy, s * r, 0, Math.PI * 2);
-      ctx.fillStyle = c;
+      const leaves = ctx.createRadialGradient(x - s * r * 0.35, y - s * (dy + r * 0.35), s * r * 0.05, x, y - s * dy, s * r);
+      leaves.addColorStop(0, '#9bc96d');
+      leaves.addColorStop(1, c);
+      ctx.fillStyle = leaves;
       ctx.fill();
+      ctx.strokeStyle = 'rgba(31, 81, 44, 0.5)';
+      ctx.lineWidth = Math.max(1, s * 0.025);
       ctx.stroke();
     }
   }
@@ -408,22 +417,59 @@ export function createCityPainter(ctx, layout, project) {
   function drawGround({ sidewalks, roads, parks }) {
     ctx.save();
     ctx.lineJoin = 'round';
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = 'rgba(60, 40, 20, 0.35)';
     for (const r of sidewalks) {
+      const a = project(r.gx0, r.gy0);
+      const b = project(r.gx1, r.gy1);
       rectPath(r);
-      ctx.fillStyle = '#ddd3bf';
+      const stone = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
+      stone.addColorStop(0, '#eee4d0');
+      stone.addColorStop(1, '#d0c2a7');
+      ctx.fillStyle = stone;
       ctx.fill();
+      ctx.strokeStyle = 'rgba(100, 79, 51, 0.3)';
+      ctx.lineWidth = Math.max(1, th * 0.02);
+      ctx.stroke();
+
+      ctx.save();
+      rectPath(r);
+      ctx.clip();
+      ctx.strokeStyle = 'rgba(88, 69, 44, 0.12)';
+      ctx.lineWidth = Math.max(1, th * 0.012);
+      for (let gx = Math.ceil(r.gx0 * 2) / 2; gx < r.gx1; gx += 0.5) {
+        const p = project(gx, r.gy0);
+        const q = project(gx, r.gy1);
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(q.x, q.y);
+        ctx.stroke();
+      }
+      for (let gy = Math.ceil(r.gy0 * 2) / 2; gy < r.gy1; gy += 0.5) {
+        const p = project(r.gx0, gy);
+        const q = project(r.gx1, gy);
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(q.x, q.y);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
     for (const r of roads) {
+      const a = project(r.gx0, r.gy0);
+      const b = project(r.gx1, r.gy1);
       rectPath(r);
-      ctx.fillStyle = '#8f8a82';
+      const asphalt = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
+      asphalt.addColorStop(0, '#767a7c');
+      asphalt.addColorStop(1, '#555b60');
+      ctx.fillStyle = asphalt;
       ctx.fill();
+      ctx.strokeStyle = 'rgba(31, 34, 36, 0.42)';
+      ctx.lineWidth = Math.max(1, th * 0.025);
+      ctx.stroke();
     }
-    // 道路中线：沿每段路的长边方向画虚线
-    ctx.setLineDash([th * 0.18, th * 0.16]);
-    ctx.strokeStyle = 'rgba(255, 250, 235, 0.75)';
-    ctx.lineWidth = Math.max(1, th * 0.03);
+    // 道路中线：沿每段路的长边方向画暖金色虚线
+    ctx.setLineDash([th * 0.16, th * 0.15]);
+    ctx.strokeStyle = 'rgba(244, 211, 133, 0.82)';
+    ctx.lineWidth = Math.max(1, th * 0.025);
     for (const r of roads) {
       const alongX = r.gx1 - r.gx0 > r.gy1 - r.gy0;
       const a = alongX ? project(r.gx0, (r.gy0 + r.gy1) / 2) : project((r.gx0 + r.gx1) / 2, r.gy0);
@@ -435,11 +481,18 @@ export function createCityPainter(ctx, layout, project) {
     }
     ctx.setLineDash([]);
     ctx.lineWidth = 1;
-    ctx.strokeStyle = 'rgba(30, 60, 25, 0.45)';
+    ctx.strokeStyle = 'rgba(30, 60, 25, 0.5)';
     parks.forEach((pk, k) => {
-      rectPath({ gx0: pk.gx - LOT_HALF, gy0: pk.gy - LOT_HALF, gx1: pk.gx + LOT_HALF, gy1: pk.gy + LOT_HALF });
-      ctx.fillStyle = '#7dbb63';
+      const park = { gx0: pk.gx - LOT_HALF, gy0: pk.gy - LOT_HALF, gx1: pk.gx + LOT_HALF, gy1: pk.gy + LOT_HALF };
+      const a = project(park.gx0, park.gy0);
+      const b = project(park.gx1, park.gy1);
+      rectPath(park);
+      const grass = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
+      grass.addColorStop(0, '#9ac878');
+      grass.addColorStop(1, '#5e994f');
+      ctx.fillStyle = grass;
       ctx.fill();
+      ctx.stroke();
       for (const [u, v] of [[-0.15, -0.12], [0.16, 0.05], [-0.05, 0.18]]) {
         const p = project(pk.gx + u, pk.gy + v);
         tree(p.x, p.y, k);

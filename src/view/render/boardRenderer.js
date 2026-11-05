@@ -113,7 +113,13 @@ export function createBoardRenderer(canvas) {
   function drawCenter(board) {
     const { th } = layout;
     centerPath();
-    ctx.fillStyle = BOARD_COLORS.center;
+    const a = project(layout, CENTER_MIN, CENTER_MIN);
+    const b = project(layout, CENTER_MAX, CENTER_MAX);
+    const base = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
+    base.addColorStop(0, '#466f63');
+    base.addColorStop(0.52, BOARD_COLORS.center);
+    base.addColorStop(1, '#29483f');
+    ctx.fillStyle = base;
     ctx.fill();
 
     ctx.save();
@@ -167,11 +173,48 @@ export function createBoardRenderer(canvas) {
         return [p.x, p.y];
       }),
     );
-    ctx.fillStyle = BOARD_COLORS.plaza;
+    const plazaA = project(layout, PLAZA_MIN, PLAZA_MIN);
+    const plazaB = project(layout, PLAZA_MAX, PLAZA_MAX);
+    const paving = ctx.createLinearGradient(plazaA.x, plazaA.y, plazaB.x, plazaB.y);
+    paving.addColorStop(0, '#f4e9d1');
+    paving.addColorStop(1, '#dfcfb2');
+    ctx.fillStyle = paving;
     ctx.fill();
     ctx.strokeStyle = BOARD_COLORS.outline;
     ctx.lineWidth = STYLE.line;
     ctx.stroke();
+
+    // Fine stone joints add scale without competing with the dice or labels.
+    ctx.save();
+    polygon(
+      [
+        [PLAZA_MIN, PLAZA_MIN],
+        [PLAZA_MAX, PLAZA_MIN],
+        [PLAZA_MAX, PLAZA_MAX],
+        [PLAZA_MIN, PLAZA_MAX],
+      ].map(([gx, gy]) => {
+        const p = project(layout, gx, gy);
+        return [p.x, p.y];
+      }),
+    );
+    ctx.clip();
+    ctx.strokeStyle = 'rgba(103, 79, 49, 0.09)';
+    ctx.lineWidth = Math.max(1, th * 0.012);
+    for (let k = Math.ceil(PLAZA_MIN * 2) / 2; k < PLAZA_MAX; k += 0.5) {
+      const p = project(layout, k, PLAZA_MIN);
+      const q = project(layout, k, PLAZA_MAX);
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(q.x, q.y);
+      ctx.stroke();
+      const r = project(layout, PLAZA_MIN, k);
+      const s = project(layout, PLAZA_MAX, k);
+      ctx.beginPath();
+      ctx.moveTo(r.x, r.y);
+      ctx.lineTo(s.x, s.y);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   /** 城市名补画在建筑之上，带浅色描边，被高楼压住时也能读清 */
@@ -198,20 +241,40 @@ export function createBoardRenderer(canvas) {
     const c = project(layout, 5, 5);
     // 广场上的游戏标识：标志 + 名字，深色字写在浅色广场上
     ctx.save();
-    ctx.fillStyle = BOARD_COLORS.plazaText;
     ctx.font = `bold ${th * 0.42}px ${FONT}`;
     const nameW = ctx.measureText(GAME_NAME).width;
     const mark = th * 0.62;
     const gap = th * 0.1;
     const left = c.x - (mark + gap + nameW) / 2;
     const ty = c.y - th * 0.95;
+    const plaqueW = mark + gap + nameW + th * 0.28;
+    const plaqueH = th * 0.58;
+    ctx.beginPath();
+    ctx.roundRect(left - th * 0.14, ty - plaqueH / 2, plaqueW, plaqueH, th * 0.12);
+    ctx.shadowColor = 'rgba(23, 41, 35, 0.28)';
+    ctx.shadowBlur = th * 0.12;
+    ctx.shadowOffsetY = th * 0.04;
+    ctx.fillStyle = '#294b43';
+    ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.lineWidth = Math.max(1, th * 0.025);
+    ctx.strokeStyle = '#cda85f';
+    ctx.stroke();
+    ctx.fillStyle = '#fff1d5';
     drawLogo(ctx, left + mark / 2, ty, mark);
     ctx.textAlign = 'left';
     ctx.fillText(GAME_NAME, left + mark + gap, ty + th * 0.02);
     ctx.restore();
     if (dice) drawDice({ x: c.x, y: c.y + th * 0.15 }, dice);
     if (state) {
-      ctx.fillStyle = BOARD_COLORS.plazaText;
+      ctx.beginPath();
+      ctx.roundRect(c.x - th * 0.5, c.y + th * 0.78, th, th * 0.34, th * 0.1);
+      ctx.fillStyle = '#35584f';
+      ctx.fill();
+      ctx.strokeStyle = '#cda85f';
+      ctx.lineWidth = Math.max(1, th * 0.02);
+      ctx.stroke();
+      ctx.fillStyle = '#fff1d5';
       ctx.font = `bold ${th * 0.28}px ${FONT}`;
       ctx.fillText(`第 ${state.round} 轮`, c.x, c.y + th * 0.95);
     }
