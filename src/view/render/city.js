@@ -74,6 +74,13 @@ const TRAFFIC = [
   { gx: RING_MIN + ROAD_WIDTH / 2, gy: 6, axis: [0, 1], color: '#4b91bf' },
   { gx: RING_MAX - ROAD_WIDTH / 2, gy: 4, axis: [0, 1], color: '#9e6ab0' },
 ];
+/** 环路与四条主路相接的位置 */
+const CROSSWALKS = [
+  { gx: 5, gy: RING_MIN + ROAD_WIDTH / 2, axis: [1, 0] },
+  { gx: 5, gy: RING_MAX - ROAD_WIDTH / 2, axis: [1, 0] },
+  { gx: RING_MIN + ROAD_WIDTH / 2, gy: 5, axis: [0, 1] },
+  { gx: RING_MAX - ROAD_WIDTH / 2, gy: 5, axis: [0, 1] },
+];
 
 /**
  * 城市的地面布局：人行道（地块所在的街区底板）、道路、小公园。纯数据，坐标为网格矩形。
@@ -468,6 +475,23 @@ export function createCityPainter(ctx, layout, project) {
     }
   }
 
+  /** 人行横道用四道浅色短线标记主路与环路的交汇处 */
+  function crosswalk({ gx, gy, axis }) {
+    const across = [-axis[1], axis[0]];
+    const span = ROAD_WIDTH * 0.78;
+    const halfStripe = 0.025;
+    ctx.fillStyle = 'rgba(239, 232, 211, 0.84)';
+    for (let i = 0; i < 4; i++) {
+      const along = (i - 1.5) * 0.105;
+      const corners = [[-halfStripe, -span / 2], [halfStripe, -span / 2], [halfStripe, span / 2], [-halfStripe, span / 2]];
+      poly(corners.map(([d, c]) => {
+        const p = project(gx + axis[0] * (along + d) + across[0] * c, gy + axis[1] * (along + d) + across[1] * c);
+        return [p.x, p.y];
+      }));
+      ctx.fill();
+    }
+  }
+
   /**
    * 画城市地面：街区人行道、道路（带中线）、小公园。地面是平的，在格子和建筑之前画。
    * @param {ReturnType<typeof cityGround>} ground
@@ -538,6 +562,7 @@ export function createCityPainter(ctx, layout, project) {
       ctx.stroke();
     }
     ctx.setLineDash([]);
+    CROSSWALKS.forEach(crosswalk);
     TRAFFIC.forEach(car);
     ctx.lineWidth = 1;
     ctx.strokeStyle = 'rgba(30, 60, 25, 0.5)';
