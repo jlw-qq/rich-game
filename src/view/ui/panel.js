@@ -429,9 +429,9 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
     goal.hidden = false;
     goal.classList.toggle('goal-last', last);
     // 经典模式上限 100 轮，进度条几乎不动，只在有目标的短局画轮数条
-    goal.replaceChildren(
-      el('span', { class: 'goal-text' }, parts.join(' · ')),
-      progress &&
+    const children = [el('span', { class: 'goal-text' }, parts.join(' · '))];
+    if (progress) {
+      children.push(
         el(
           'span',
           {
@@ -444,7 +444,9 @@ export function createPanel({ players, status, actions, assets, onAction, maxTra
           },
           el('span', { class: 'round-fill', style: `width:${Math.round((round / rules.maxRounds) * 100)}%` }),
         ),
-    );
+      );
+    }
+    goal.replaceChildren(...children);
   }
 
   /** 动画播放中：只切换按钮的禁用状态，不重绘数字（避免提前显示结果） */
